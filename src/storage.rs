@@ -31,11 +31,10 @@ impl Storage {
     ///
     /// Safe to call multiple times (uses `IF NOT EXISTS`).
     pub async fn init_schema(&self) -> Result<()> {
-        let schema = r#"
-            CREATE EXTENSION IF NOT EXISTS vector;
-            CREATE EXTENSION IF NOT EXISTS pg_trgm;
-
-            CREATE TABLE IF NOT EXISTS memories (
+        let stmts: &[&str] = &[
+            "CREATE EXTENSION IF NOT EXISTS vector",
+            "CREATE EXTENSION IF NOT EXISTS pg_trgm",
+            "CREATE TABLE IF NOT EXISTS memories (
                 id UUID PRIMARY KEY,
                 network_type TEXT NOT NULL CHECK (network_type IN ('world', 'experience', 'opinion', 'observation')),
                 content TEXT NOT NULL,
@@ -44,36 +43,26 @@ impl Storage {
                 confidence REAL,
                 created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                 updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-            );
-
-            CREATE TABLE IF NOT EXISTS edges (
+            )",
+            "CREATE TABLE IF NOT EXISTS edges (
                 id UUID PRIMARY KEY,
                 source_id UUID NOT NULL REFERENCES memories(id) ON DELETE CASCADE,
                 target_id UUID NOT NULL REFERENCES memories(id) ON DELETE CASCADE,
                 edge_type TEXT NOT NULL CHECK (edge_type IN ('temporal', 'semantic', 'entity', 'causal')),
                 weight REAL NOT NULL DEFAULT 1.0,
                 created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-            );
-
-            CREATE INDEX IF NOT EXISTS idx_memories_network ON memories(network_type);
-            CREATE INDEX IF NOT EXISTS idx_edges_source ON edges(source_id);
-            CREATE INDEX IF NOT EXISTS idx_edges_target ON edges(target_id);
-            CREATE INDEX IF NOT EXISTS idx_edges_type ON edges(edge_type);
-        "#;
-
-        sqlx::query(schema).execute(&self.pool).await?;
-
-        sqlx::query(
+            )",
+            "CREATE INDEX IF NOT EXISTS idx_memories_network ON memories(network_type)",
+            "CREATE INDEX IF NOT EXISTS idx_edges_source ON edges(source_id)",
+            "CREATE INDEX IF NOT EXISTS idx_edges_target ON edges(target_id)",
+            "CREATE INDEX IF NOT EXISTS idx_edges_type ON edges(edge_type)",
             "CREATE INDEX IF NOT EXISTS idx_memories_fts ON memories USING GIN (to_tsvector('english', content))",
-        )
-        .execute(&self.pool)
-        .await?;
-
-        sqlx::query(
             "CREATE INDEX IF NOT EXISTS idx_memories_embedding ON memories USING hnsw (embedding vector_cosine_ops)",
-        )
-        .execute(&self.pool)
-        .await?;
+        ];
+
+        for stmt in stmts {
+            sqlx::query(stmt).execute(&self.pool).await?;
+        }
 
         Ok(())
     }
