@@ -1,7 +1,20 @@
-#[derive(Debug, Clone)]
+use anyhow::{Context, Result};
+use serde::Deserialize;
+
+#[derive(Debug, Clone, Deserialize)]
 pub struct Config {
-    pub database_url: String,
-    pub llm_base_url: String,
+    pub database: DatabaseConfig,
+    pub llm: LLMConfig,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct DatabaseConfig {
+    pub url: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct LLMConfig {
+    pub base_url: String,
     pub api_key: String,
     pub chat_model: String,
     pub embed_model: String,
@@ -9,21 +22,14 @@ pub struct Config {
 }
 
 impl Config {
-    pub fn from_env() -> Self {
-        Self {
-            database_url: std::env::var("DATABASE_URL").unwrap_or_else(|_| {
-                "postgres://hindsight:hindsight@localhost:5432/hindsight".into()
-            }),
-            llm_base_url: std::env::var("LLM_BASE_URL")
-                .unwrap_or_else(|_| "http://127.0.0.1:1234".into()),
-            api_key: std::env::var("LLM_API_KEY").unwrap_or_else(|_| "local".into()),
-            chat_model: std::env::var("CHAT_MODEL").unwrap_or_else(|_| "google/gemma-3-27b".into()),
-            embed_model: std::env::var("EMBED_MODEL")
-                .unwrap_or_else(|_| "nomic-ai/nomic-embed-text-v1.5-GGUF".into()),
-            embedding_dim: std::env::var("EMBEDDING_DIM")
-                .ok()
-                .and_then(|s| s.parse().ok())
-                .unwrap_or(768),
-        }
+    pub fn load() -> Result<Self> {
+        let settings = config::Config::builder()
+            .add_source(config::File::with_name("config.yaml"))
+            .build()
+            .context("Failed to load config.yaml")?;
+
+        settings
+            .try_deserialize()
+            .context("Failed to parse config.yaml")
     }
 }

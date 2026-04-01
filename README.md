@@ -20,15 +20,10 @@ This project implements the agentic memory management architecture proposed in t
 docker compose up -d
 ```
 
-2. Set environment variables (defaults shown — only override if needed):
+2. Copy and edit the config (defaults should work for local development):
 
 ```bash
-export DATABASE_URL="postgres://hindsight:hindsight@localhost:5432/hindsight"
-export LLM_BASE_URL="http://127.0.0.1:1234"
-export LLM_API_KEY="local"
-export CHAT_MODEL="google/gemma-3-27b"
-export EMBED_MODEL="nomic-ai/nomic-embed-text-v1.5-GGUF"
-export EMBEDDING_DIM=768
+cp config.yaml.example config.yaml
 ```
 
 3. Build and run:
@@ -36,3 +31,5 @@ export EMBEDDING_DIM=768
 ```bash
 cargo run
 ```
+
+Configuration is loaded from `config.yaml` in the project root. See `config.yaml.example` for all options.

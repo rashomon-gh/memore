@@ -4,7 +4,7 @@ use anyhow::{Result, anyhow};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 
-use crate::config::Config;
+use crate::config::LLMConfig;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChatMessage {
@@ -62,7 +62,7 @@ pub struct LLMClient {
 }
 
 impl LLMClient {
-    pub fn new(config: &Config) -> Self {
+    pub fn new(config: &LLMConfig) -> Self {
         let client = Client::builder()
             .timeout(Duration::from_secs(180))
             .build()
@@ -70,7 +70,7 @@ impl LLMClient {
 
         Self {
             client,
-            base_url: config.llm_base_url.trim_end_matches('/').to_string(),
+            base_url: config.base_url.trim_end_matches('/').to_string(),
             api_key: config.api_key.clone(),
             chat_model: config.chat_model.clone(),
             embed_model: config.embed_model.clone(),

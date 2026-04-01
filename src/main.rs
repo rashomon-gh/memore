@@ -24,15 +24,15 @@ async fn main() -> Result<()> {
         )
         .init();
 
-    let config = Config::from_env();
+    let config = Config::load()?;
 
-    println!("Connecting to database at {}...", config.database_url);
-    let storage = Storage::connect(&config.database_url).await?;
+    println!("Connecting to database at {}...", config.database.url);
+    let storage = Storage::connect(&config.database.url).await?;
     storage.init_schema().await?;
     println!("Database schema initialized.");
 
-    let llm = LLMClient::new(&config);
-    let embedding_dim = config.embedding_dim;
+    let llm = LLMClient::new(&config.llm);
+    let embedding_dim = config.llm.embedding_dim;
     let tempr = TemprPipeline::new(llm, storage, embedding_dim);
 
     let profile = AgentProfile {
