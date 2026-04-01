@@ -101,7 +101,14 @@ You may include multiple opinion tags. Do not mention the XML tags in your visib
             let id = Uuid::new_v4();
             self.tempr
                 .storage()
-                .store_memory(id, NetworkType::Opinion, opinion_text, &embedding, &[], Some(*confidence))
+                .store_memory(
+                    id,
+                    NetworkType::Opinion,
+                    opinion_text,
+                    &embedding,
+                    &[],
+                    Some(*confidence),
+                )
                 .await?;
             tracing::info!(
                 "Stored new opinion: {} (confidence: {:.2})",
@@ -121,12 +128,7 @@ fn extract_opinions(text: &str) -> (String, Vec<(String, f32)>) {
     let tag_start = "<opinion";
     let tag_end = "</opinion>";
 
-    loop {
-        let start_idx = match clean.find(tag_start) {
-            Some(idx) => idx,
-            None => break,
-        };
-
+    while let Some(start_idx) = clean.find(tag_start) {
         let content_start = match clean[start_idx..].find('>') {
             Some(offset) => start_idx + offset + 1,
             None => break,
@@ -140,10 +142,10 @@ fn extract_opinions(text: &str) -> (String, Vec<(String, f32)>) {
         let opening_tag = &clean[start_idx..content_start];
         let opinion_text = clean[content_start..end_idx].trim().to_string();
 
-        if let Some(conf) = extract_confidence(opening_tag) {
-            if !opinion_text.is_empty() {
-                opinions.push((opinion_text, conf.clamp(0.0, 1.0)));
-            }
+        if let Some(conf) = extract_confidence(opening_tag)
+            && !opinion_text.is_empty()
+        {
+            opinions.push((opinion_text, conf.clamp(0.0, 1.0)));
         }
 
         let full_end = end_idx + tag_end.len();

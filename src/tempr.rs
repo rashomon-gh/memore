@@ -116,7 +116,12 @@ If no facts can be extracted, return: {"facts": []}"#;
                 if link.target_fact_index < fact_ids.len() && link.target_fact_index != i {
                     let weight = default_edge_weight(&link.edge_type);
                     self.storage
-                        .store_edge(fact_ids[i], fact_ids[link.target_fact_index], link.edge_type, weight)
+                        .store_edge(
+                            fact_ids[i],
+                            fact_ids[link.target_fact_index],
+                            link.edge_type,
+                            weight,
+                        )
                         .await?;
                 }
             }
@@ -131,9 +136,7 @@ If no facts can be extracted, return: {"facts": []}"#;
                 for opinion in &related {
                     if let Some(current_conf) = opinion.confidence {
                         let new_conf = (current_conf + 0.05).min(1.0);
-                        self.storage
-                            .update_confidence(opinion.id, new_conf)
-                            .await?;
+                        self.storage.update_confidence(opinion.id, new_conf).await?;
                         tracing::info!(
                             "Reinforced opinion {} confidence: {:.2} -> {:.2}",
                             opinion.id,
@@ -168,18 +171,9 @@ If no facts can be extracted, return: {"facts": []}"#;
         let graph = self.spreading_activation(&seed_ids).await;
 
         let rankings = vec![
-            semantic
-                .iter()
-                .map(|sm| (sm.memory.id, sm.score))
-                .collect(),
-            keyword
-                .iter()
-                .map(|sm| (sm.memory.id, sm.score))
-                .collect(),
-            temporal
-                .iter()
-                .map(|sm| (sm.memory.id, sm.score))
-                .collect(),
+            semantic.iter().map(|sm| (sm.memory.id, sm.score)).collect(),
+            keyword.iter().map(|sm| (sm.memory.id, sm.score)).collect(),
+            temporal.iter().map(|sm| (sm.memory.id, sm.score)).collect(),
             graph,
         ];
 
@@ -213,10 +207,7 @@ If no facts can be extracted, return: {"facts": []}"#;
 
     async fn spreading_activation(&self, seed_ids: &[Uuid]) -> Vec<(Uuid, f64)> {
         let mut activated: HashMap<Uuid, f64> = HashMap::new();
-        let mut frontier: Vec<(Uuid, f64)> = seed_ids
-            .iter()
-            .map(|id| (*id, 1.0))
-            .collect();
+        let mut frontier: Vec<(Uuid, f64)> = seed_ids.iter().map(|id| (*id, 1.0)).collect();
 
         for _ in 0..GRAPH_MAX_HOPS {
             let mut next_frontier = Vec::new();
@@ -245,18 +236,12 @@ If no facts can be extracted, return: {"facts": []}"#;
         }
 
         let mut results: Vec<_> = activated.into_iter().collect();
-        results.sort_by(|a, b| {
-            b.1.partial_cmp(&a.1)
-                .unwrap_or(std::cmp::Ordering::Equal)
-        });
+        results.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
         results
     }
 }
 
-fn reciprocal_rank_fusion(
-    rankings: &[Vec<(Uuid, f64)>],
-    k: u64,
-) -> Vec<(Uuid, f64)> {
+fn reciprocal_rank_fusion(rankings: &[Vec<(Uuid, f64)>], k: u64) -> Vec<(Uuid, f64)> {
     let mut scores: HashMap<Uuid, f64> = HashMap::new();
     for ranking in rankings {
         for (rank, (id, _score)) in ranking.iter().enumerate() {
@@ -264,10 +249,7 @@ fn reciprocal_rank_fusion(
         }
     }
     let mut results: Vec<_> = scores.into_iter().collect();
-    results.sort_by(|a, b| {
-        b.1.partial_cmp(&a.1)
-            .unwrap_or(std::cmp::Ordering::Equal)
-    });
+    results.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
     results
 }
 
@@ -293,10 +275,10 @@ fn extract_json(text: &str) -> &str {
             return text[start..start + end].trim();
         }
     }
-    if let Some(start) = text.find('{') {
-        if let Some(end) = text.rfind('}') {
-            return &text[start..=end];
-        }
+    if let Some(start) = text.find('{')
+        && let Some(end) = text.rfind('}')
+    {
+        return &text[start..=end];
     }
     text
 }

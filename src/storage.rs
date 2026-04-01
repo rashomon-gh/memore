@@ -144,11 +144,7 @@ impl Storage {
         Ok(results)
     }
 
-    pub async fn search_keyword(
-        &self,
-        query: &str,
-        limit: usize,
-    ) -> Result<Vec<ScoredMemory>> {
+    pub async fn search_keyword(&self, query: &str, limit: usize) -> Result<Vec<ScoredMemory>> {
         let tsquery: String = query
             .split_whitespace()
             .filter(|w| w.len() > 2)
@@ -210,12 +206,10 @@ impl Storage {
     }
 
     pub async fn get_neighbors(&self, memory_id: Uuid) -> Result<Vec<(Uuid, f32)>> {
-        let rows = sqlx::query(
-            "SELECT target_id, weight FROM edges WHERE source_id = $1",
-        )
-        .bind(memory_id)
-        .fetch_all(&self.pool)
-        .await?;
+        let rows = sqlx::query("SELECT target_id, weight FROM edges WHERE source_id = $1")
+            .bind(memory_id)
+            .fetch_all(&self.pool)
+            .await?;
 
         let mut results = Vec::new();
         for row in rows {
@@ -251,20 +245,14 @@ impl Storage {
         Ok(())
     }
 
-    pub async fn find_opinions_by_entities(
-        &self,
-        entities: &[String],
-    ) -> Result<Vec<MemoryUnit>> {
+    pub async fn find_opinions_by_entities(&self, entities: &[String]) -> Result<Vec<MemoryUnit>> {
         if entities.is_empty() {
             return Ok(Vec::new());
         }
 
         let mut results = Vec::new();
         for entity in entities {
-            let pattern = format!(
-                "%\"{}\"%",
-                entity.replace('%', "\\%").replace('_', "\\_")
-            );
+            let pattern = format!("%\"{}\"%", entity.replace('%', "\\%").replace('_', "\\_"));
             let rows = sqlx::query(
                 r#"SELECT id, network_type, content, embedding::text AS embedding_text,
                           entities, confidence, created_at, updated_at
