@@ -2,4 +2,5 @@
 
 .idea/
 .vscode/
-.DS_Storeconfig.yaml
+.DS_Store
+config.yaml
