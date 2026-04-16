@@ -10,6 +10,7 @@
 //!   url: "postgres://hindsight:hindsight@localhost:5432/hindsight"
 //! llm:
 //!   base_url: "http://127.0.0.1:1234"
+//!   embed_base_url: "http://localhost:1234"
 //!   api_key: "local"
 //!   chat_model: "google/gemma-3-27b"
 //!   embed_model: "nomic-ai/nomic-embed-text-v1.5-GGUF"
@@ -38,8 +39,12 @@ pub struct DatabaseConfig {
 /// OpenAI-compatible LLM endpoint configuration.
 #[derive(Debug, Clone, Deserialize)]
 pub struct LLMConfig {
-    /// Base URL of the API (e.g. `http://127.0.0.1:1234`).
+    /// Base URL of the API for chat completions (e.g. `http://127.0.0.1:1234`).
     pub base_url: String,
+    /// Optional separate base URL for embeddings (e.g. `http://localhost:1234`).
+    /// If not provided, falls back to `base_url`.
+    #[serde(default)]
+    pub embed_base_url: Option<String>,
     /// Bearer token sent in the `Authorization` header.
     pub api_key: String,
     /// Model identifier used for chat completions.

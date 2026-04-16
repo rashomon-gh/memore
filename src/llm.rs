@@ -65,6 +65,7 @@ struct EmbedData {
 pub struct LLMClient {
     client: Client,
     base_url: String,
+    embed_base_url: String,
     api_key: String,
     chat_model: String,
     embed_model: String,
@@ -78,9 +79,17 @@ impl LLMClient {
             .build()
             .expect("failed to build HTTP client");
 
+        let embed_base_url = config
+            .embed_base_url
+            .as_ref()
+            .unwrap_or(&config.base_url)
+            .trim_end_matches('/')
+            .to_string();
+
         Self {
             client,
             base_url: config.base_url.trim_end_matches('/').to_string(),
+            embed_base_url,
             api_key: config.api_key.clone(),
             chat_model: config.chat_model.clone(),
             embed_model: config.embed_model.clone(),
@@ -150,7 +159,7 @@ impl LLMClient {
 
         let response = self
             .client
-            .post(format!("{}/v1/embeddings", self.base_url))
+            .post(format!("{}/v1/embeddings", self.embed_base_url))
             .header("Authorization", format!("Bearer {}", self.api_key))
             .header("Content-Type", "application/json")
             .json(&request)
