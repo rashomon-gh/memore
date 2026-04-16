@@ -16,6 +16,7 @@ use tower_http::services::ServeDir;
 use tracing::info;
 
 use crate::storage::Storage;
+use crate::llm::LLMClient;
 use crate::api::routes::{ApiState, create_api_router};
 
 /// Configuration for the web server.
@@ -40,12 +41,14 @@ impl Default for WebConfig {
 pub struct WebServer {
     config: WebConfig,
     storage: Arc<Storage>,
+    llm: Arc<LLMClient>,
+    embedding_dim: usize,
 }
 
 impl WebServer {
     /// Create a new web server instance.
-    pub fn new(config: WebConfig, storage: Arc<Storage>) -> Self {
-        Self { config, storage }
+    pub fn new(config: WebConfig, storage: Arc<Storage>, llm: Arc<LLMClient>, embedding_dim: usize) -> Self {
+        Self { config, storage, llm, embedding_dim }
     }
 
     /// Start the web server (blocks until shutdown).
@@ -57,6 +60,8 @@ impl WebServer {
 
         let state = ApiState {
             storage: self.storage.clone(),
+            llm: self.llm.clone(),
+            embedding_dim: self.embedding_dim,
         };
 
         // Build the application router with static file serving

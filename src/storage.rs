@@ -26,7 +26,7 @@ impl Storage {
         Ok(Self { pool })
     }
 
-    /// Creates the `memories` and `edges` tables, installs the `vector`
+    /// Creates the `memories`, `edges`, and `files` tables, installs the `vector`
     /// and `pg_trgm` extensions, and builds the HNSW and GIN indexes.
     ///
     /// Safe to call multiple times (uses `IF NOT EXISTS`).
@@ -52,12 +52,24 @@ impl Storage {
                 weight REAL NOT NULL DEFAULT 1.0,
                 created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
             )",
+            "CREATE TABLE IF NOT EXISTS files (
+                id UUID PRIMARY KEY,
+                filename TEXT NOT NULL,
+                path TEXT NOT NULL,
+                file_type TEXT NOT NULL,
+                size_bytes BIGINT NOT NULL,
+                hash TEXT NOT NULL UNIQUE,
+                processed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                content_length INTEGER NOT NULL,
+                chunk_count INTEGER NOT NULL
+            )",
             "CREATE INDEX IF NOT EXISTS idx_memories_network ON memories(network_type)",
             "CREATE INDEX IF NOT EXISTS idx_edges_source ON edges(source_id)",
             "CREATE INDEX IF NOT EXISTS idx_edges_target ON edges(target_id)",
             "CREATE INDEX IF NOT EXISTS idx_edges_type ON edges(edge_type)",
             "CREATE INDEX IF NOT EXISTS idx_memories_fts ON memories USING GIN (to_tsvector('english', content))",
             "CREATE INDEX IF NOT EXISTS idx_memories_embedding ON memories USING hnsw (embedding vector_cosine_ops)",
+            "CREATE INDEX IF NOT EXISTS idx_files_hash ON files(hash)",
         ];
 
         for stmt in stmts {
@@ -484,6 +496,103 @@ impl Storage {
             recent_memories: recent_memories as usize,
             average_confidence: avg_confidence,
         })
+    }
+
+    /// Store file metadata after processing.
+    pub async fn store_file_metadata(&self, file_metadata: &crate::files::FileMetadata) -> Result<()> {
+        let file_type_str = match file_metadata.file_type {
+            crate::files::FileType::PDF => "pdf",
+            crate::files::FileType::Markdown => "markdown",
+            crate::files::FileType::Text => "text",
+            crate::files::FileType::Unknown => "unknown",
+        };
+
+        sqlx::query(
+            r#"INSERT INTO files (id, filename, path, file_type, size_bytes, hash, processed_at, content_length, chunk_count)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)"#
+        )
+        .bind(Uuid::parse_str(&file_metadata.id)?)
+        .bind(&file_metadata.filename)
+        .bind(file_metadata.path.to_string_lossy().as_ref())
+        .bind(file_type_str)
+        .bind(file_metadata.size_bytes as i64)
+        .bind(&file_metadata.hash)
+        .bind(file_metadata.processed_at)
+        .bind(file_metadata.content_length as i32)
+        .bind(file_metadata.chunk_count as i32)
+        .execute(&self.pool)
+        .await?;
+
+        Ok(())
+    }
+
+    /// Get file metadata by hash.
+    pub async fn get_file_by_hash(&self, hash: &str) -> Result<Option<crate::files::FileMetadata>> {
+        let row = sqlx::query(
+            "SELECT id, filename, path, file_type, size_bytes, hash, processed_at, content_length, chunk_count
+             FROM files WHERE hash = $1"
+        )
+        .bind(hash)
+        .fetch_optional(&self.pool)
+        .await?;
+
+        match row {
+            Some(row) => {
+                let file_type = match row.get::<String, _>("file_type").as_str() {
+                    "pdf" => crate::files::FileType::PDF,
+                    "markdown" => crate::files::FileType::Markdown,
+                    "text" => crate::files::FileType::Text,
+                    _ => crate::files::FileType::Unknown,
+                };
+
+                Ok(Some(crate::files::FileMetadata {
+                    id: row.get::<Uuid, _>("id").to_string(),
+                    filename: row.get("filename"),
+                    path: row.get::<String, _>("path").into(),
+                    file_type,
+                    size_bytes: row.get("size_bytes"),
+                    hash: row.get("hash"),
+                    processed_at: row.get("processed_at"),
+                    content_length: row.get("content_length"),
+                    chunk_count: row.get("chunk_count"),
+                }))
+            }
+            None => Ok(None),
+        }
+    }
+
+    /// Get all processed files.
+    pub async fn get_all_files(&self) -> Result<Vec<crate::files::FileMetadata>> {
+        let rows = sqlx::query(
+            "SELECT id, filename, path, file_type, size_bytes, hash, processed_at, content_length, chunk_count
+             FROM files ORDER BY processed_at DESC"
+        )
+        .fetch_all(&self.pool)
+        .await?;
+
+        let mut files = Vec::new();
+        for row in rows {
+            let file_type = match row.get::<String, _>("file_type").as_str() {
+                "pdf" => crate::files::FileType::PDF,
+                "markdown" => crate::files::FileType::Markdown,
+                "text" => crate::files::FileType::Text,
+                _ => crate::files::FileType::Unknown,
+            };
+
+            files.push(crate::files::FileMetadata {
+                id: row.get::<Uuid, _>("id").to_string(),
+                filename: row.get("filename"),
+                path: row.get::<String, _>("path").into(),
+                file_type,
+                size_bytes: row.get("size_bytes"),
+                hash: row.get("hash"),
+                processed_at: row.get("processed_at"),
+                content_length: row.get("content_length"),
+                chunk_count: row.get("chunk_count"),
+            });
+        }
+
+        Ok(files)
     }
 
     /// Updates the confidence score of an opinion memory.

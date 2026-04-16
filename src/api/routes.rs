@@ -4,19 +4,21 @@
 //! and entity information from the web interface.
 
 use axum::{
-    extract::{Path, Query, State},
+    extract::{Path, Query, State, Multipart},
     http::StatusCode,
     response::Json,
-    routing::get,
+    routing::{get, post},
     Router,
 };
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
+use serde_json::json;
 use std::sync::Arc;
 use uuid::Uuid;
 
 use crate::storage::Storage;
 use crate::models::NetworkType;
 use crate::api::models::*;
+use crate::files::{processor::FileProcessor, FileType};
 
 /// Query parameters for memory listing endpoint.
 #[derive(Debug, Deserialize)]
@@ -40,6 +42,8 @@ pub struct GraphQuery {
 #[derive(Clone)]
 pub struct ApiState {
     pub storage: Arc<Storage>,
+    pub llm: Arc<crate::llm::LLMClient>,
+    pub embedding_dim: usize,
 }
 
 /// Create the API router with all endpoints.
@@ -51,6 +55,9 @@ pub fn create_api_router() -> Router<ApiState> {
         .route("/api/entities", get(list_entities))
         .route("/api/stats", get(get_stats))
         .route("/api/networks/:network_type", get(get_by_network))
+        .route("/api/files/upload", post(upload_file))
+        .route("/api/files", get(list_files))
+        .route("/api/files/:id", get(get_file))
 }
 
 /// GET /api/memories - List and search memories with pagination.
@@ -296,4 +303,164 @@ pub async fn get_by_network(
         .collect();
 
     Ok(Json(api_memories))
+}
+
+/// POST /api/files/upload - Upload and process a file.
+pub async fn upload_file(
+    State(state): State<ApiState>,
+    mut multipart: Multipart,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    // Create a temporary directory for uploads
+    let temp_dir = std::env::temp_dir();
+
+    let mut filename = String::new();
+    let mut file_content = Vec::new();
+    let mut temp_file_path = temp_dir.join(format!("hindsight_upload_{}", Uuid::new_v4()));
+
+    // Process multipart form data
+    while let Some(mut field) = multipart.next_field().await.map_err(|_| StatusCode::BAD_REQUEST)? {
+        let field_name = field.name().unwrap_or("").to_string();
+
+        if field_name == "file" {
+            filename = field.file_name()
+                .unwrap_or("unknown")
+                .to_string();
+
+            // Update temp file path to include original extension
+            let file_extension = std::path::Path::new(&filename)
+                .extension()
+                .and_then(|ext| ext.to_str())
+                .unwrap_or("bin");
+            temp_file_path = temp_dir.join(format!("hindsight_upload_{}.{}", Uuid::new_v4(), file_extension));
+
+            // Read the field data into bytes
+            use futures_util::stream::StreamExt;
+            let mut content = Vec::new();
+            while let Some(chunk) = field.next().await {
+                let chunk = chunk.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+                content.extend_from_slice(&chunk);
+            }
+            file_content = content;
+        }
+    }
+
+    if filename.is_empty() || file_content.is_empty() {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+
+    // Write uploaded content to temp file
+    tokio::fs::write(&temp_file_path, &file_content)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    // Process the file
+    let processor = FileProcessor::new(state.storage.clone(), state.llm.clone(), state.embedding_dim);
+
+    match processor.process_file(temp_file_path.clone()).await {
+        Ok(result) => {
+            // Clean up temp file
+            let _ = tokio::fs::remove_file(&temp_file_path).await;
+
+            Ok(Json(json!({
+                "status": "success",
+                "file_id": result.file_metadata.id,
+                "filename": result.file_metadata.filename,
+                "memories_created": result.total_memories_created,
+                "processing_time_ms": result.processing_time_ms,
+                "file_type": match result.file_metadata.file_type {
+                    FileType::PDF => "pdf",
+                    FileType::Markdown => "markdown",
+                    FileType::Text => "text",
+                    FileType::Unknown => "unknown",
+                }
+            })))
+        }
+        Err(e) => {
+            // Clean up temp file on error
+            let _ = tokio::fs::remove_file(&temp_file_path).await;
+
+            tracing::error!("Failed to process uploaded file: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+/// GET /api/files - List all processed files.
+pub async fn list_files(
+    State(state): State<ApiState>,
+) -> Result<Json<Vec<FileMetadataResponse>>, StatusCode> {
+    let files = state.storage
+        .get_all_files()
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    let response: Vec<FileMetadataResponse> = files
+        .into_iter()
+        .map(|f| FileMetadataResponse {
+            id: f.id,
+            filename: f.filename,
+            path: f.path.to_string_lossy().to_string(),
+            file_type: match f.file_type {
+                FileType::PDF => "pdf".to_string(),
+                FileType::Markdown => "markdown".to_string(),
+                FileType::Text => "text".to_string(),
+                FileType::Unknown => "unknown".to_string(),
+            },
+            size_bytes: f.size_bytes,
+            processed_at: f.processed_at,
+            content_length: f.content_length,
+            chunk_count: f.chunk_count,
+        })
+        .collect();
+
+    Ok(Json(response))
+}
+
+/// GET /api/files/:id - Get specific file metadata.
+pub async fn get_file(
+    State(state): State<ApiState>,
+    Path(id): Path<String>,
+) -> Result<Json<FileMetadataResponse>, StatusCode> {
+    let file_uuid = Uuid::parse_str(&id)
+        .map_err(|_| StatusCode::BAD_REQUEST)?;
+
+    // For now, return all files and find by id (inefficient but works)
+    let files = state.storage
+        .get_all_files()
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    let file = files
+        .into_iter()
+        .find(|f| f.id == id || Uuid::parse_str(&f.id).map(|u| u == file_uuid).unwrap_or(false))
+        .ok_or(StatusCode::NOT_FOUND)?;
+
+    Ok(Json(FileMetadataResponse {
+        id: file.id,
+        filename: file.filename,
+        path: file.path.to_string_lossy().to_string(),
+        file_type: match file.file_type {
+            FileType::PDF => "pdf".to_string(),
+            FileType::Markdown => "markdown".to_string(),
+            FileType::Text => "text".to_string(),
+            FileType::Unknown => "unknown".to_string(),
+        },
+        size_bytes: file.size_bytes,
+        processed_at: file.processed_at,
+        content_length: file.content_length,
+        chunk_count: file.chunk_count,
+    }))
+}
+
+/// File metadata response for API.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FileMetadataResponse {
+    pub id: String,
+    pub filename: String,
+    pub path: String,
+    pub file_type: String,
+    pub size_bytes: i64,
+    pub processed_at: chrono::DateTime<chrono::Utc>,
+    pub content_length: i32,
+    pub chunk_count: i32,
 }

@@ -16,6 +16,7 @@
 mod api;
 mod cara;
 mod config;
+mod files;
 mod llm;
 mod models;
 mod storage;
@@ -55,12 +56,13 @@ async fn main() -> Result<()> {
     storage.init_schema().await?;
     println!("Database schema initialized.");
 
-    let llm = LLMClient::new(&config.llm);
+    let llm = Arc::new(LLMClient::new(&config.llm));
     let embedding_dim = config.llm.embedding_dim;
 
     // Create a new storage connection for TEMPR (it takes ownership)
     let storage_for_tempr = Storage::connect(&config.database.url).await?;
-    let tempr = TemprPipeline::new(llm, storage_for_tempr, embedding_dim);
+    let llm_for_tempr = LLMClient::new(&config.llm);
+    let tempr = TemprPipeline::new(llm_for_tempr, storage_for_tempr, embedding_dim);
 
     let profile = AgentProfile {
         name: "Hindsight".into(),
@@ -84,7 +86,7 @@ async fn main() -> Result<()> {
             enabled: true,
         };
 
-        let web_server = WebServer::new(web_config, storage.clone());
+        let web_server = WebServer::new(web_config, storage.clone(), llm, embedding_dim);
 
         if cli_mode {
             // Run both CLI and web server

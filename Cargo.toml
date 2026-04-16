@@ -15,6 +15,18 @@ anyhow = "1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 config = { version = "0.15", features = ["yaml"] }
-axum = "0.7"
+axum = { version = "0.7", features = ["multipart"] }
 tower = "0.4"
 tower-http = { version = "0.5", features = ["cors", "fs", "compression-gzip", "trace"] }
+
+# File processing
+lopdf = "0.34"
+pulldown-cmark = { version = "0.12", default-features = false }
+notify = { version = "6", features = ["serde"] }
+sha2 = "0.10"
+hex = "0.4"
+
+# File upload handling
+mime = "0.3"
+mime_guess = "2.0"
+futures-util = "0.3"
