@@ -4,6 +4,7 @@ use anyhow::{Result, Context};
 use lopdf::Document;
 use pulldown_cmark::{Parser, Event, Tag, TagEnd, HeadingLevel};
 use std::path::Path;
+use std::fs;
 
 use crate::files::{FileType, ExtractedContent, ContentMetadata, CodeBlock};
 
@@ -19,27 +20,112 @@ pub fn extract_content(file_path: &Path, file_type: &FileType) -> Result<Extract
 
 /// Extract text from PDF file.
 fn extract_pdf_text(file_path: &Path) -> Result<ExtractedContent> {
+    // Try lopdf first
+    let lopdf_result = extract_with_lopdf(file_path);
+
+    if let Ok(text) = lopdf_result {
+        if !text.trim().is_empty() {
+            return Ok(ExtractedContent {
+                text,
+                metadata: ContentMetadata {
+                    title: None,
+                    author: None,
+                    created_date: None,
+                    language: None,
+                },
+                code_blocks: Vec::new(),
+            });
+        }
+    }
+
+    // Fallback to pdf-extract if lopdf failed or returned empty text
+    tracing::info!("lopdf extraction failed or returned empty text, trying pdf-extract");
+    extract_with_pdf_extract(file_path)
+}
+
+/// Extract text using lopdf library.
+fn extract_with_lopdf(file_path: &Path) -> Result<String> {
     let doc = Document::load(file_path)
-        .context("Failed to load PDF file")?;
+        .context("Failed to load PDF file with lopdf")?;
 
-    // Extract all pages from the PDF
-    let pages: Vec<u32> = doc.get_pages().keys().cloned().collect();
-    let text = doc.extract_text(&pages)
-        .context("Failed to extract text from PDF")?;
+    let mut text = String::new();
 
-    // Simplified metadata extraction (lopdf 0.34 doesn't have easy metadata access)
-    let metadata = ContentMetadata {
-        title: None,
-        author: None,
-        created_date: None,
-        language: None,
-    };
+    // Try to get pages and extract text
+    let pages = doc.get_pages();
+    if pages.is_empty() {
+        // If no pages found, try alternative extraction method
+        text = doc.extract_text(&[])
+            .unwrap_or_else(|_| String::new());
+    } else {
+        // Extract text from each page individually for better error handling
+        let page_ids: Vec<u32> = pages.keys().cloned().collect();
+        let mut sorted_pages = page_ids.clone();
+        sorted_pages.sort();
 
-    Ok(ExtractedContent {
-        text,
-        metadata,
-        code_blocks: Vec::new(),
-    })
+        for (index, page_id) in sorted_pages.iter().enumerate() {
+            match doc.extract_text(&[*page_id]) {
+                Ok(page_text) => {
+                    if !page_text.trim().is_empty() {
+                        if !text.is_empty() {
+                            text.push_str("\n\n--- Page ");
+                            text.push_str(&(index + 1).to_string());
+                            text.push_str(" ---\n\n");
+                        }
+                        text.push_str(&page_text);
+                    }
+                }
+                Err(e) => {
+                    tracing::warn!("Failed to extract text from page {}: {}", page_id, e);
+                    // Continue with other pages instead of failing completely
+                }
+            }
+        }
+    }
+
+    Ok(text)
+}
+
+/// Extract text using pdf-extract library (fallback).
+fn extract_with_pdf_extract(file_path: &Path) -> Result<ExtractedContent> {
+    let pdf_data = fs::read(file_path)
+        .context("Failed to read PDF file")?;
+
+    match pdf_extract::extract_text_from_mem(&pdf_data) {
+        Ok(text) => {
+            if text.trim().is_empty() {
+                return Err(anyhow::anyhow!(
+                    "PDF extraction failed. The PDF might be:\n\
+                     • Password-protected\n\
+                     • Contains images instead of text (scanned document)\n\
+                     • Uses an unsupported encoding format\n\
+                     • Corrupted or invalid\n\n\
+                     Please try converting the PDF to a searchable format or use a Markdown file instead."
+                ));
+            }
+
+            Ok(ExtractedContent {
+                text,
+                metadata: ContentMetadata {
+                    title: None,
+                    author: None,
+                    created_date: None,
+                    language: None,
+                },
+                code_blocks: Vec::new(),
+            })
+        }
+        Err(e) => {
+            Err(anyhow::anyhow!(
+                "PDF extraction failed with both lopdf and pdf-extract libraries.\n\
+                 Error details: {}\n\n\
+                 This PDF might be password-protected, scanned (images only), or use an incompatible format.\n\
+                 Please try:\n\
+                 • Converting the PDF to a searchable format\n\
+                 • Using a Markdown version instead\n\
+                 • Running OCR on scanned documents first", e
+            ))
+        }
+    }
 }
 
 /// Extract text and structured content from Markdown file.

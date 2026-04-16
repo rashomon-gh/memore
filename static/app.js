@@ -32,6 +32,23 @@ function hindsightApp() {
         selectedMemory: null,
         relatedMemories: [],
 
+        // Chat functionality
+        chatMessages: [],
+        chatInput: '',
+        chatStatus: {
+            typing: false,
+            uploading: false,
+            uploadMessage: '',
+            uploadProgress: 0
+        },
+        chatFile: {
+            selected: false,
+            name: '',
+            size: 0,
+            valid: false,
+            file: null
+        },
+
         // Cytoscape instance
         cy: null,
 
@@ -41,6 +58,9 @@ function hindsightApp() {
         async init() {
             await this.loadStats();
             await this.loadGraphData();
+
+            // Initialize chat with welcome message
+            this.addChatMessage('assistant', 'Hello! I\'m Hindsight, your AI memory assistant. You can:\n\n• Chat with me to build memories from our conversations\n• Upload PDF files to extract knowledge\n• Share Markdown documents for memory building\n\nTry uploading a document or just start talking!');
 
             // Load analytics when tab is clicked
             this.$watch('activeTab', (value) => {
@@ -327,6 +347,180 @@ function hindsightApp() {
             if (diffDays < 7) return `${diffDays}d ago`;
 
             return date.toLocaleDateString();
+        },
+
+        // Chat functionality
+        async sendMessage() {
+            // Handle file upload if file is selected
+            if (this.chatFile.selected && this.chatFile.valid) {
+                await this.uploadChatFile();
+                return;
+            }
+
+            // Handle text message
+            const message = this.chatInput.trim();
+            if (!message) return;
+
+            // Add user message to chat
+            this.addChatMessage('user', message);
+            this.chatInput = '';
+
+            // Show typing indicator
+            this.chatStatus.typing = true;
+
+            try {
+                // For now, just simulate a response since we don't have a chat API yet
+                setTimeout(() => {
+                    this.chatStatus.typing = false;
+                    this.addChatMessage('assistant', 'I received your message! The chat functionality is currently being integrated with the backend. You can upload PDF and Markdown files using the attachment button, and I\'ll extract memories from them.');
+                }, 1000);
+
+            } catch (error) {
+                this.chatStatus.typing = false;
+                this.addChatMessage('assistant', 'Sorry, I encountered an error processing your message. Please try again.');
+                console.error('Chat error:', error);
+            }
+        },
+
+        addChatMessage(sender, content, memoriesCreated = null) {
+            const message = {
+                id: Date.now() + Math.random(),
+                sender: sender,
+                content: content,
+                timestamp: new Date().toISOString(),
+                memories_created: memoriesCreated
+            };
+
+            this.chatMessages.push(message);
+
+            // Scroll to bottom of chat
+            this.$nextTick(() => {
+                const chatContainer = document.getElementById('chatMessages');
+                if (chatContainer) {
+                    chatContainer.scrollTop = chatContainer.scrollHeight;
+                }
+            });
+        },
+
+        handleChatFileSelect(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            // Validate file type (only PDF and Markdown)
+            const validExtensions = ['.pdf', '.md', '.markdown'];
+            const fileExtension = '.' + file.name.split('.').pop().toLowerCase();
+            const isValid = validExtensions.includes(fileExtension);
+
+            // Validate file size (50MB limit)
+            const maxSize = 50 * 1024 * 1024; // 50MB
+            const isValidSize = file.size <= maxSize;
+
+            this.chatFile = {
+                selected: true,
+                name: file.name,
+                size: file.size,
+                valid: isValid && isValidSize,
+                file: file
+            };
+
+            // Auto-send if file is valid
+            if (this.chatFile.valid) {
+                this.uploadChatFile();
+            }
+        },
+
+        async uploadChatFile() {
+            if (!this.chatFile.selected || !this.chatFile.valid || !this.chatFile.file) return;
+
+            const file = this.chatFile.file;
+
+            // Add file upload message to chat
+            this.addChatMessage('user', `📎 Uploading file: ${file.name}`);
+
+            // Reset chat file state
+            this.chatFile = {
+                selected: false,
+                name: '',
+                size: 0,
+                valid: false,
+                file: null
+            };
+
+            // Show upload progress
+            this.chatStatus.uploading = true;
+            this.chatStatus.uploadMessage = `Processing ${file.name}...`;
+            this.chatStatus.uploadProgress = 0;
+
+            try {
+                // Simulate progress (since we can't track real upload progress easily)
+                const progressInterval = setInterval(() => {
+                    if (this.chatStatus.uploadProgress < 90) {
+                        this.chatStatus.uploadProgress += 10;
+                    }
+                }, 500);
+
+                // Create FormData
+                const formData = new FormData();
+                formData.append('file', file);
+
+                // Upload file
+                const response = await fetch(`${API_BASE}/files/upload`, {
+                    method: 'POST',
+                    body: formData
+                });
+
+                clearInterval(progressInterval);
+
+                if (!response.ok) {
+                    throw new Error('File upload failed');
+                }
+
+                const result = await response.json();
+
+                // Update progress to complete
+                this.chatStatus.uploadProgress = 100;
+                this.chatStatus.uploadMessage = 'Complete!';
+
+                // Add success message to chat
+                this.addChatMessage('assistant',
+                    `✅ Successfully processed ${result.filename}!\n\nCreated ${result.memories_created} memories from the document.\nProcessing time: ${result.processing_time_ms}ms`,
+                    result.memories_created);
+
+                // Refresh stats
+                await this.loadStats();
+
+                // Hide upload progress after a delay
+                setTimeout(() => {
+                    this.chatStatus.uploading = false;
+                    this.chatStatus.uploadProgress = 0;
+                    this.chatStatus.uploadMessage = '';
+                }, 3000);
+
+            } catch (error) {
+                this.chatStatus.uploading = false;
+                this.chatStatus.uploadProgress = 0;
+                this.chatStatus.uploadMessage = '';
+
+                // Add error message to chat
+                this.addChatMessage('assistant',
+                    `❌ Failed to process ${file.name}. Please make sure it's a valid PDF or Markdown file and try again.`);
+                console.error('File upload error:', error);
+            }
+        },
+
+        clearChatFile() {
+            this.chatFile = {
+                selected: false,
+                name: '',
+                size: 0,
+                valid: false,
+                file: null
+            };
+        },
+
+        formatTime(timestamp) {
+            const date = new Date(timestamp);
+            return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
         }
     };
 }

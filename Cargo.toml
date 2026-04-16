@@ -21,6 +21,7 @@ tower-http = { version = "0.5", features = ["cors", "fs", "compression-gzip", "t
 
 # File processing
 lopdf = "0.34"
+pdf-extract = "0.7"
 pulldown-cmark = { version = "0.12", default-features = false }
 notify = { version = "6", features = ["serde"] }
 sha2 = "0.10"

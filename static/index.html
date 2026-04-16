@@ -91,6 +91,10 @@
                         :class="['network-tab', 'py-4', 'px-1', 'border-b-2', 'font-medium', 'text-sm', activeTab === 'inspector' ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300']">
                     🔬 Memory Inspector
                 </button>
+                <button @click="activeTab = 'chat'"
+                        :class="['network-tab', 'py-4', 'px-1', 'border-b-2', 'font-medium', 'text-sm', activeTab === 'chat' ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300']">
+                    💬 Chat & Upload
+                </button>
             </nav>
         </div>
     </div>
@@ -304,6 +308,139 @@
                             </div>
                         </div>
                     </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Chat Interface Tab -->
+        <div x-show="activeTab === 'chat'" x-transition>
+            <div class="bg-white rounded-lg shadow h-[700px] flex flex-col">
+                <!-- Chat Header -->
+                <div class="border-b p-4">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <h2 class="text-lg font-semibold">Chat with Hindsight</h2>
+                            <p class="text-sm text-gray-500">Converse and upload PDF/Markdown files to build memories</p>
+                        </div>
+                        <div class="flex items-center space-x-2">
+                            <div class="w-2 h-2 bg-green-500 rounded-full"></div>
+                            <span class="text-sm text-gray-600">Online</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Messages Area -->
+                <div class="flex-1 overflow-y-auto p-4 space-y-4" id="chatMessages">
+                    <template x-for="message in chatMessages" :key="message.id">
+                        <div :class="['flex', message.sender === 'user' ? 'justify-end' : 'justify-start']">
+                            <div :class="['max-w-[70%] rounded-lg p-3', message.sender === 'user' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-800']">
+                                <div class="flex items-center space-x-2 mb-1">
+                                    <span class="text-xs font-medium" x-text="message.sender === 'user' ? 'You' : 'Hindsight'"></span>
+                                    <span class="text-xs opacity-70" x-text="formatTime(message.timestamp)"></span>
+                                </div>
+                                <p class="text-sm whitespace-pre-wrap" x-text="message.content"></p>
+                                <div x-show="message.memories_created" class="mt-2 text-xs bg-white bg-opacity-20 rounded p-2">
+                                    <span class="font-medium">✨ </span>
+                                    <span x-text="message.memories_created + ' memories created'"></span>
+                                </div>
+                            </div>
+                        </div>
+                    </template>
+
+                    <!-- Typing Indicator -->
+                    <div x-show="chatStatus.typing" class="flex justify-start">
+                        <div class="bg-gray-100 rounded-lg p-3">
+                            <div class="flex space-x-2">
+                                <div class="w-2 h-2 bg-gray-400 rounded-full animate-bounce"></div>
+                                <div class="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style="animation-delay: 0.2s"></div>
+                                <div class="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style="animation-delay: 0.4s"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- File Upload Area -->
+                <div x-show="chatStatus.uploading" class="px-4 py-2 bg-blue-50 border-t">
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center space-x-3">
+                            <svg class="w-5 h-5 text-blue-600 animate-spin" fill="none" viewBox="0 0 24 24">
+                                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                            </svg>
+                            <span class="text-sm text-blue-800" x-text="chatStatus.uploadMessage"></span>
+                        </div>
+                        <div class="w-1/3 bg-blue-200 rounded-full h-2">
+                            <div class="bg-blue-600 h-2 rounded-full transition-all duration-300" :style="'width: ' + chatStatus.uploadProgress + '%'"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Input Area -->
+                <div class="border-t p-4">
+                    <!-- File Preview -->
+                    <div x-show="chatFile.selected" class="mb-3 flex items-center justify-between bg-gray-50 rounded-lg p-3">
+                        <div class="flex items-center space-x-3">
+                            <svg class="w-8 h-8 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                            </svg>
+                            <div>
+                                <p class="text-sm font-medium text-gray-800" x-text="chatFile.name"></p>
+                                <p class="text-xs text-gray-500" x-text="formatFileSize(chatFile.size)"></p>
+                            </div>
+                        </div>
+                        <div class="flex items-center space-x-2">
+                            <span x-show="chatFile.valid" class="text-xs bg-green-100 text-green-800 px-2 py-1 rounded">✓ Valid file</span>
+                            <span x-show="!chatFile.valid" class="text-xs bg-red-100 text-red-800 px-2 py-1 rounded">✗ Invalid file</span>
+                            <button @click="clearChatFile()" class="text-gray-400 hover:text-gray-600">
+                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                                </svg>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Input Row -->
+                    <div class="flex items-end space-x-3">
+                        <!-- File Upload Button -->
+                        <div class="relative">
+                            <button @click="$refs.chatFileInput.click()"
+                                    class="p-2 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                                    title="Upload PDF or Markdown file">
+                                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"></path>
+                                </svg>
+                            </button>
+                            <input type="file" x-ref="chatFileInput" @change="handleChatFileSelect($event)"
+                                   accept=".pdf,.md,.markdown" class="hidden">
+                        </div>
+
+                        <!-- Text Input -->
+                        <div class="flex-1">
+                            <textarea x-model="chatInput"
+                                      @keydown.enter.prevent="sendMessage()"
+                                      placeholder="Type a message or upload a PDF/Markdown file..."
+                                      rows="1"
+                                      class="w-full border rounded-lg px-4 py-2 resize-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                      style="min-height: 44px; max-height: 120px;"></textarea>
+                        </div>
+
+                        <!-- Send Button -->
+                        <button @click="sendMessage()"
+                                :disabled="!chatInput.trim() && !chatFile.selected"
+                                :class="['p-2 rounded-lg transition-colors', (!chatInput.trim() && !chatFile.selected) ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : 'bg-blue-600 text-white hover:bg-blue-700']">
+                            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"></path>
+                            </svg>
+                        </button>
+                    </div>
+
+                    <!-- File Validation Notice -->
+                    <p class="text-xs text-gray-500 mt-2">
+                        📎 Only PDF and Markdown files accepted. Max file size: 50MB.
+                        <span x-show="chatFile.selected && !chatFile.valid" class="text-red-600 font-medium">
+                            Invalid file type selected. Please choose a PDF or Markdown file.
+                        </span>
+                    </p>
                 </div>
             </div>
         </div>
