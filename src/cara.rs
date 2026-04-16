@@ -6,6 +6,7 @@
 //! automatically stored in the Opinion network.
 
 use anyhow::Result;
+use chrono::Utc;
 use uuid::Uuid;
 
 use crate::llm::ChatMessage;
@@ -38,7 +39,7 @@ impl CaraPipeline {
     ///
     /// `token_budget` controls how many tokens of recalled context are
     /// injected into the prompt.
-    pub async fn reflect(&self, user_message: &str, token_budget: usize) -> Result<String> {
+    pub async fn reflect(&self, user_message: &str, token_budget: usize) -> Result<(String, Vec<MemoryUnit>)> {
         let recalled = self.tempr.recall(user_message, token_budget).await?;
 
         let memory_context = if recalled.is_empty() {
@@ -110,6 +111,7 @@ You may include multiple opinion tags. Do not mention the XML tags in your visib
 
         let (clean_response, new_opinions) = extract_opinions(&response);
 
+        let mut stored_opinions = Vec::new();
         for (opinion_text, confidence) in &new_opinions {
             let embedding = self
                 .tempr
@@ -134,9 +136,19 @@ You may include multiple opinion tags. Do not mention the XML tags in your visib
                 opinion_text,
                 confidence
             );
+            stored_opinions.push(MemoryUnit {
+                id,
+                network: NetworkType::Opinion,
+                content: opinion_text.clone(),
+                embedding: vec![],
+                entities: vec![],
+                confidence: Some(*confidence),
+                created_at: Utc::now(),
+                updated_at: Utc::now(),
+            });
         }
 
-        Ok(clean_response)
+        Ok((clean_response, stored_opinions))
     }
 }
 

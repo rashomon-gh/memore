@@ -263,6 +263,17 @@
                                     </template>
                                 </div>
                             </template>
+                            <template x-if="msg.opinions && msg.opinions.length > 0">
+                                <div class="mt-1.5 space-y-1" style="max-width:80%;">
+                                    <template x-for="op in msg.opinions" :key="op.id">
+                                        <div class="flex items-center gap-1.5 cursor-pointer" @click="inspectMemory(op.id)">
+                                            <span class="network-badge network-opinion">opinion</span>
+                                            <span class="text-xs text-gray-600" x-text="(op.confidence * 100).toFixed(0) + '% confident'"></span>
+                                            <span class="text-xs text-gray-700 truncate" style="max-width: 300px;" :title="op.content" x-text="op.content"></span>
+                                        </div>
+                                    </template>
+                                </div>
+                            </template>
                         </div>
                     </template>
                     <div x-show="chatLoading" class="flex justify-start">

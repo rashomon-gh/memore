@@ -230,7 +230,8 @@ function hindsightApp() {
                 this.chatMessages.push({
                     role: 'assistant',
                     text: data.response,
-                    memories: data.new_memories || []
+                    memories: data.new_memories || [],
+                    opinions: data.opinions || []
                 });
 
                 await this.loadStats();

@@ -319,7 +319,7 @@ pub async fn chat(
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
 
-    let response = state.cara.reflect(&req.message, 2000).await.map_err(|e| {
+    let (response, opinions) = state.cara.reflect(&req.message, 2000).await.map_err(|e| {
         tracing::error!("Reflect error: {}", e);
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
@@ -335,8 +335,20 @@ pub async fn chat(
         })
         .collect();
 
+    let chat_opinions: Vec<ChatMemory> = opinions
+        .into_iter()
+        .map(|m| ChatMemory {
+            id: m.id,
+            network: m.network.as_str().to_string(),
+            content: m.content,
+            entities: m.entities,
+            confidence: m.confidence,
+        })
+        .collect();
+
     Ok(Json(ChatResponse {
         response,
         new_memories,
+        opinions: chat_opinions,
     }))
 }

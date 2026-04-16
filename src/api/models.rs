@@ -133,6 +133,7 @@ pub struct ChatRequest {
 pub struct ChatResponse {
     pub response: String,
     pub new_memories: Vec<ChatMemory>,
+    pub opinions: Vec<ChatMemory>,
 }
 
 /// A memory created during a chat interaction, for display in the UI.

@@ -141,7 +141,7 @@ async fn run_cli_repl(cara: Arc<CaraPipeline>) -> Result<()> {
         }
 
         match cara.reflect(input, 2000).await {
-            Ok(response) => println!("\n{}\n", response),
+            Ok((response, _opinions)) => println!("\n{}\n", response),
             Err(e) => tracing::error!("Reflect error: {}", e),
         }
     }
