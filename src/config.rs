@@ -15,18 +15,25 @@
 //!   chat_model: "google/gemma-3-27b"
 //!   embed_model: "nomic-ai/nomic-embed-text-v1.5-GGUF"
 //!   embedding_dim: 768
+//! web:
+//!   enabled: true
+//!   host: "127.0.0.1"
+//!   port: 8080
 //! ```
 
 use anyhow::{Context, Result};
 use serde::Deserialize;
 
-/// Top-level configuration containing database and LLM settings.
+/// Top-level configuration containing database, LLM, and web settings.
 #[derive(Debug, Clone, Deserialize)]
 pub struct Config {
     /// PostgreSQL connection settings.
     pub database: DatabaseConfig,
     /// LLM endpoint settings.
     pub llm: LLMConfig,
+    /// Web server configuration.
+    #[serde(default)]
+    pub web: WebConfig,
 }
 
 /// PostgreSQL connection configuration.
@@ -53,6 +60,38 @@ pub struct LLMConfig {
     pub embed_model: String,
     /// Dimensionality of the embedding vectors produced by `embed_model`.
     pub embedding_dim: usize,
+}
+
+/// Web server configuration.
+#[derive(Debug, Clone, Deserialize)]
+pub struct WebConfig {
+    /// Whether to enable the web server.
+    #[serde(default)]
+    pub enabled: bool,
+    /// Host to bind the web server to.
+    #[serde(default = "default_host")]
+    pub host: String,
+    /// Port to bind the web server to.
+    #[serde(default = "default_port")]
+    pub port: u16,
+}
+
+impl Default for WebConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            host: default_host(),
+            port: default_port(),
+        }
+    }
+}
+
+fn default_host() -> String {
+    "127.0.0.1".to_string()
+}
+
+fn default_port() -> u16 {
+    8080
 }
 
 impl Config {

@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hindsight - Memory Bank Dashboard</title>
+
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <!-- Cytoscape.js for network graph -->
+    <script src="https://cdn.jsdelivr.net/npm/cytoscape@3.30.1/dist/cytoscape.min.js"></script>
+
+    <!-- Chart.js for analytics -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+
+    <!-- Alpine.js for reactivity -->
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.0/dist/cdn.min.js"></script>
+
+    <style>
+        .network-tab.active {
+            border-bottom: 2px solid #3b82f6;
+            color: #3b82f6;
+        }
+        .graph-container {
+            height: 600px;
+            border: 1px solid #e5e7eb;
+            border-radius: 0.5rem;
+        }
+        .memory-card {
+            transition: all 0.2s;
+        }
+        .memory-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+        .network-badge {
+            font-size: 0.75rem;
+            padding: 0.25rem 0.5rem;
+            border-radius: 9999px;
+        }
+        .network-world { background-color: #dbeafe; color: #1e40af; }
+        .network-experience { background-color: #dcfce7; color: #166534; }
+        .network-opinion { background-color: #fed7aa; color: #9a3412; }
+        .network-observation { background-color: #e9d5ff; color: #6b21a8; }
+    </style>
+</head>
+<body class="bg-gray-50" x-data="hindsightApp()">
+    <!-- Header -->
+    <header class="bg-white shadow-sm">
+        <div class="max-w-7xl mx-auto px-4 py-4">
+            <div class="flex items-center justify-between">
+                <div class="flex items-center space-x-3">
+                    <div class="w-10 h-10 bg-blue-600 rounded-lg flex items-center justify-center">
+                        <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"></path>
+                        </svg>
+                    </div>
+                    <div>
+                        <h1 class="text-xl font-bold text-gray-900">Hindsight</h1>
+                        <p class="text-sm text-gray-500">Memory Bank Visualization</p>
+                    </div>
+                </div>
+                <div class="flex items-center space-x-4">
+                    <div class="text-sm text-gray-600">
+                        <span x-text="stats.total_memories"></span> memories ·
+                        <span x-text="stats.total_edges"></span> edges
+                    </div>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Navigation Tabs -->
+    <div class="bg-white border-b">
+        <div class="max-w-7xl mx-auto px-4">
+            <nav class="flex space-x-8">
+                <button @click="activeTab = 'graph'"
+                        :class="['network-tab', 'py-4', 'px-1', 'border-b-2', 'font-medium', 'text-sm', activeTab === 'graph' ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300']">
+                    🕸️ Network Graph
+                </button>
+                <button @click="activeTab = 'search'"
+                        :class="['network-tab', 'py-4', 'px-1', 'border-b-2', 'font-medium', 'text-sm', activeTab === 'search' ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300']">
+                    🔍 Search & Filter
+                </button>
+                <button @click="activeTab = 'analytics'"
+                        :class="['network-tab', 'py-4', 'px-1', 'border-b-2', 'font-medium', 'text-sm', activeTab === 'analytics' ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300']">
+                    📊 Analytics
+                </button>
+                <button @click="activeTab = 'inspector'"
+                        :class="['network-tab', 'py-4', 'px-1', 'border-b-2', 'font-medium', 'text-sm', activeTab === 'inspector' ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300']">
+                    🔬 Memory Inspector
+                </button>
+            </nav>
+        </div>
+    </div>
+
+    <!-- Main Content -->
+    <main class="max-w-7xl mx-auto px-4 py-6">
+
+        <!-- Network Graph Tab -->
+        <div x-show="activeTab === 'graph'" x-transition>
+            <div class="bg-white rounded-lg shadow p-6">
+                <div class="flex items-center justify-between mb-4">
+                    <h2 class="text-lg font-semibold">Memory Network Graph</h2>
+                    <div class="flex items-center space-x-2">
+                        <select x-model="graphFilters.network" @change="loadGraphData()"
+                                class="border rounded-lg px-3 py-2 text-sm">
+                            <option value="">All Networks</option>
+                            <option value="world">World</option>
+                            <option value="experience">Experience</option>
+                            <option value="opinion">Opinion</option>
+                            <option value="observation">Observation</option>
+                        </select>
+                        <button @click="loadGraphData()" class="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-blue-700">
+                            🔄 Refresh
+                        </button>
+                    </div>
+                </div>
+                <div id="cy" class="graph-container"></div>
+                <p class="text-sm text-gray-500 mt-2">
+                    💡 Tip: Click on nodes to inspect memories. Scroll to zoom, drag to pan.
+                </p>
+            </div>
+        </div>
+
+        <!-- Search & Filter Tab -->
+        <div x-show="activeTab === 'search'" x-transition>
+            <div class="bg-white rounded-lg shadow p-6">
+                <div class="mb-6">
+                    <div class="flex items-center space-x-4">
+                        <div class="flex-1">
+                            <input type="text" x-model="searchQuery" @keyup.enter="searchMemories()"
+                                   placeholder="Search memories by keyword..."
+                                   class="w-full border rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                        </div>
+                        <button @click="searchMemories()" class="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700">
+                            🔍 Search
+                        </button>
+                    </div>
+                </div>
+
+                <div class="flex items-center space-x-4 mb-4">
+                    <div class="flex items-center space-x-2">
+                        <span class="text-sm text-gray-600">Network:</span>
+                        <select x-model="searchFilters.network" class="border rounded px-3 py-1 text-sm">
+                            <option value="">All</option>
+                            <option value="world">World</option>
+                            <option value="experience">Experience</option>
+                            <option value="opinion">Opinion</option>
+                            <option value="observation">Observation</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div x-show="searchResults.length > 0">
+                    <p class="text-sm text-gray-600 mb-4">Found <span x-text="searchResults.length"></span> memories</p>
+                    <div class="grid gap-4">
+                        <template x-for="memory in searchResults" :key="memory.id">
+                            <div class="memory-card bg-gray-50 rounded-lg p-4 cursor-pointer border"
+                                 @click="inspectMemory(memory.id)">
+                                <div class="flex items-start justify-between">
+                                    <div class="flex-1">
+                                        <div class="flex items-center space-x-2 mb-2">
+                                            <span :class="['network-badge', 'network-' + memory.network]" x-text="memory.network"></span>
+                                            <span class="text-xs text-gray-500" x-text="formatDate(memory.created_at)"></span>
+                                        </div>
+                                        <p class="text-gray-800" x-text="memory.content"></p>
+                                        <div class="flex items-center space-x-2 mt-2">
+                                            <template x-for="entity in memory.entities" :key="entity">
+                                                <span class="text-xs bg-gray-200 text-gray-700 px-2 py-1 rounded" x-text="entity"></span>
+                                            </template>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </template>
+                    </div>
+                </div>
+
+                <div x-show="searchResults.length === 0 && searchPerformed" class="text-center py-8 text-gray-500">
+                    No memories found matching your search.
+                </div>
+            </div>
+        </div>
+
+        <!-- Analytics Tab -->
+        <div x-show="activeTab === 'analytics'" x-transition>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <!-- Memory Distribution -->
+                <div class="bg-white rounded-lg shadow p-6">
+                    <h3 class="text-lg font-semibold mb-4">Memory Distribution</h3>
+                    <canvas id="networkChart"></canvas>
+                </div>
+
+                <!-- Edge Types -->
+                <div class="bg-white rounded-lg shadow p-6">
+                    <h3 class="text-lg font-semibold mb-4">Relationship Types</h3>
+                    <canvas id="edgeChart"></canvas>
+                </div>
+
+                <!-- Top Entities -->
+                <div class="bg-white rounded-lg shadow p-6">
+                    <h3 class="text-lg font-semibold mb-4">Top Entities</h3>
+                    <canvas id="entityChart"></canvas>
+                </div>
+
+                <!-- Statistics Cards -->
+                <div class="bg-white rounded-lg shadow p-6">
+                    <h3 class="text-lg font-semibold mb-4">Quick Stats</h3>
+                    <div class="space-y-4">
+                        <div class="flex items-center justify-between">
+                            <span class="text-gray-600">Total Memories</span>
+                            <span class="text-2xl font-bold text-blue-600" x-text="stats.total_memories"></span>
+                        </div>
+                        <div class="flex items-center justify-between">
+                            <span class="text-gray-600">Total Edges</span>
+                            <span class="text-2xl font-bold text-green-600" x-text="stats.total_edges"></span>
+                        </div>
+                        <div class="flex items-center justify-between">
+                            <span class="text-gray-600">Recent (24h)</span>
+                            <span class="text-2xl font-bold text-purple-600" x-text="stats.recent_memories"></span>
+                        </div>
+                        <div class="flex items-center justify-between" x-show="stats.average_confidence">
+                            <span class="text-gray-600">Avg Confidence</span>
+                            <span class="text-2xl font-bold text-orange-600" x-text="(stats.average_confidence * 100).toFixed(0) + '%'"></span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Memory Inspector Tab -->
+        <div x-show="activeTab === 'inspector'" x-transition>
+            <div class="bg-white rounded-lg shadow p-6">
+                <div x-show="!selectedMemory" class="text-center py-8 text-gray-500">
+                    Select a memory from the graph or search results to inspect it.
+                </div>
+
+                <div x-show="selectedMemory">
+                    <div class="flex items-start justify-between mb-6">
+                        <div>
+                            <span :class="['network-badge', 'network-' + selectedMemory?.network]" x-text="selectedMemory?.network"></span>
+                            <h3 class="text-lg font-semibold mt-2">Memory Details</h3>
+                        </div>
+                        <button @click="selectedMemory = null" class="text-gray-400 hover:text-gray-600">
+                            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                            </svg>
+                        </button>
+                    </div>
+
+                    <div class="space-y-4">
+                        <div>
+                            <label class="text-sm font-medium text-gray-700">Content</label>
+                            <p class="mt-1 text-gray-800" x-text="selectedMemory?.content"></p>
+                        </div>
+
+                        <div class="grid grid-cols-2 gap-4">
+                            <div>
+                                <label class="text-sm font-medium text-gray-700">Created</label>
+                                <p class="mt-1 text-gray-800" x-text="formatDate(selectedMemory?.created_at)"></p>
+                            </div>
+                            <div>
+                                <label class="text-sm font-medium text-gray-700">Updated</label>
+                                <p class="mt-1 text-gray-800" x-text="formatDate(selectedMemory?.updated_at)"></p>
+                            </div>
+                        </div>
+
+                        <div x-show="selectedMemory?.confidence">
+                            <label class="text-sm font-medium text-gray-700">Confidence</label>
+                            <div class="mt-1">
+                                <div class="w-full bg-gray-200 rounded-full h-2.5">
+                                    <div class="bg-blue-600 h-2.5 rounded-full"
+                                         :style="'width: ' + (selectedMemory?.confidence * 100) + '%'"></div>
+                                </div>
+                                <span class="text-sm text-gray-600" x-text="(selectedMemory?.confidence * 100).toFixed(1) + '%'"></span>
+                            </div>
+                        </div>
+
+                        <div x-show="selectedMemory?.entities?.length > 0">
+                            <label class="text-sm font-medium text-gray-700">Entities</label>
+                            <div class="mt-1 flex flex-wrap gap-2">
+                                <template x-for="entity in selectedMemory?.entities" :key="entity">
+                                    <span class="bg-gray-100 text-gray-800 px-3 py-1 rounded-full text-sm" x-text="entity"></span>
+                                </template>
+                            </div>
+                        </div>
+
+                        <div x-show="relatedMemories.length > 0">
+                            <label class="text-sm font-medium text-gray-700">Related Memories</label>
+                            <div class="mt-2 space-y-2">
+                                <template x-for="related in relatedMemories" :key="related.memory.id">
+                                    <div class="bg-gray-50 rounded-lg p-3 cursor-pointer hover:bg-gray-100"
+                                         @click="inspectMemory(related.memory.id)">
+                                        <div class="flex items-center space-x-2">
+                                            <span :class="['network-badge', 'network-' + related.memory.network]" x-text="related.memory.network"></span>
+                                            <span class="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded" x-text="related.edge_type"></span>
+                                            <span class="text-xs text-gray-500" x-text="related.weight.toFixed(2)"></span>
+                                        </div>
+                                        <p class="mt-1 text-sm text-gray-800" x-text="related.memory.content"></p>
+                                    </div>
+                                </template>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </main>
+
+    <script src="app.js"></script>
+</body>
+</html>

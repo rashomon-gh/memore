@@ -8,3 +8,8 @@ llm:
   chat_model: "google/gemma-3-27b"
   embed_model: "nomic-ai/nomic-embed-text-v1.5-GGUF"
   embedding_dim: 768
+
+web:
+  enabled: true
+  host: "127.0.0.1"
+  port: 8080

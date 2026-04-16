@@ -251,6 +251,241 @@ impl Storage {
         }
     }
 
+    /// Get all memories with pagination.
+    pub async fn get_all_memories(&self, limit: usize, offset: usize) -> Result<Vec<MemoryUnit>> {
+        let rows = sqlx::query(
+            "SELECT id, network_type, content, embedding::text AS embedding_text, entities, confidence, created_at, updated_at
+             FROM memories
+             ORDER BY created_at DESC
+             LIMIT $1 OFFSET $2"
+        )
+        .bind(limit as i64)
+        .bind(offset as i64)
+        .fetch_all(&self.pool)
+        .await?;
+
+        let mut results = Vec::new();
+        for row in rows {
+            results.push(row_to_memory(&row)?);
+        }
+        Ok(results)
+    }
+
+    /// Get memories by network type with pagination.
+    pub async fn get_memories_by_network(&self, network: NetworkType, limit: usize, offset: usize) -> Result<Vec<MemoryUnit>> {
+        let rows = sqlx::query(
+            "SELECT id, network_type, content, embedding::text AS embedding_text, entities, confidence, created_at, updated_at
+             FROM memories
+             WHERE network_type = $1
+             ORDER BY created_at DESC
+             LIMIT $2 OFFSET $3"
+        )
+        .bind(network.as_str())
+        .bind(limit as i64)
+        .bind(offset as i64)
+        .fetch_all(&self.pool)
+        .await?;
+
+        let mut results = Vec::new();
+        for row in rows {
+            results.push(row_to_memory(&row)?);
+        }
+        Ok(results)
+    }
+
+    /// Get all edges for graph visualization.
+    pub async fn get_all_edges(&self) -> Result<Vec<Edge>> {
+        let rows = sqlx::query(
+            "SELECT id, source_id, target_id, edge_type, weight, created_at FROM edges"
+        )
+        .fetch_all(&self.pool)
+        .await?;
+
+        let mut results = Vec::new();
+        for row in rows {
+            let id: Uuid = row.get("id");
+            let source_id: Uuid = row.get("source_id");
+            let target_id: Uuid = row.get("target_id");
+            let edge_type_str: String = row.get("edge_type");
+            let edge_type = EdgeType::from_str(&edge_type_str)
+                .ok_or_else(|| anyhow!("Unknown edge type: {}", edge_type_str))?;
+            let weight: f32 = row.get("weight");
+            let created_at: DateTime<Utc> = row.get("created_at");
+
+            results.push(Edge {
+                id,
+                source_id,
+                target_id,
+                edge_type,
+                weight,
+                created_at,
+            });
+        }
+        Ok(results)
+    }
+
+    /// Get all unique entities from memories.
+    pub async fn get_all_entities(&self) -> Result<Vec<String>> {
+        let rows = sqlx::query(
+            "SELECT DISTINCT jsonb_array_elements_text(entities) AS entity
+             FROM memories
+             WHERE jsonb_array_length(entities) > 0
+             ORDER BY entity"
+        )
+        .fetch_all(&self.pool)
+        .await?;
+
+        let mut entities = Vec::new();
+        for row in rows {
+            let entity: String = row.get("entity");
+            entities.push(entity);
+        }
+        Ok(entities)
+    }
+
+    /// Get detailed neighbors with full memory and edge information.
+    pub async fn get_neighbors_detailed(&self, memory_id: Uuid, limit: usize) -> Result<Vec<(MemoryUnit, EdgeType, f32)>> {
+        let rows = sqlx::query(
+            r#"SELECT e.target_id, e.edge_type, e.weight,
+                      m.id, m.network_type, m.content, m.embedding::text AS embedding_text,
+                      m.entities, m.confidence, m.created_at, m.updated_at
+               FROM edges e
+               JOIN memories m ON e.target_id = m.id
+               WHERE e.source_id = $1
+               LIMIT $2"#
+        )
+        .bind(memory_id)
+        .bind(limit as i64)
+        .fetch_all(&self.pool)
+        .await?;
+
+        let mut results = Vec::new();
+        for row in rows {
+            let edge_type_str: String = row.get("edge_type");
+            let edge_type = EdgeType::from_str(&edge_type_str)
+                .ok_or_else(|| anyhow!("Unknown edge type: {}", edge_type_str))?;
+            let weight: f32 = row.get("weight");
+            let memory = row_to_memory(&row)?;
+            results.push((memory, edge_type, weight));
+        }
+        Ok(results)
+    }
+
+    /// Get statistics for analytics dashboard.
+    pub async fn get_statistics(&self) -> Result<crate::api::models::MemoryStats> {
+        use crate::api::models::*;
+
+        // Get total counts
+        let total_memories: i64 = sqlx::query("SELECT COUNT(*) FROM memories")
+            .fetch_one(&self.pool)
+            .await?
+            .get("count");
+
+        let total_edges: i64 = sqlx::query("SELECT COUNT(*) FROM edges")
+            .fetch_one(&self.pool)
+            .await?
+            .get("count");
+
+        // Get counts by network
+        let world_count: i64 = sqlx::query("SELECT COUNT(*) FROM memories WHERE network_type = 'world'")
+            .fetch_one(&self.pool)
+            .await?
+            .get("count");
+
+        let experience_count: i64 = sqlx::query("SELECT COUNT(*) FROM memories WHERE network_type = 'experience'")
+            .fetch_one(&self.pool)
+            .await?
+            .get("count");
+
+        let opinion_count: i64 = sqlx::query("SELECT COUNT(*) FROM memories WHERE network_type = 'opinion'")
+            .fetch_one(&self.pool)
+            .await?
+            .get("count");
+
+        let observation_count: i64 = sqlx::query("SELECT COUNT(*) FROM memories WHERE network_type = 'observation'")
+            .fetch_one(&self.pool)
+            .await?
+            .get("count");
+
+        // Get edge type counts
+        let temporal_count: i64 = sqlx::query("SELECT COUNT(*) FROM edges WHERE edge_type = 'temporal'")
+            .fetch_one(&self.pool)
+            .await?
+            .get("count");
+
+        let semantic_count: i64 = sqlx::query("SELECT COUNT(*) FROM edges WHERE edge_type = 'semantic'")
+            .fetch_one(&self.pool)
+            .await?
+            .get("count");
+
+        let entity_count: i64 = sqlx::query("SELECT COUNT(*) FROM edges WHERE edge_type = 'entity'")
+            .fetch_one(&self.pool)
+            .await?
+            .get("count");
+
+        let causal_count: i64 = sqlx::query("SELECT COUNT(*) FROM edges WHERE edge_type = 'causal'")
+            .fetch_one(&self.pool)
+            .await?
+            .get("count");
+
+        // Get top entities
+        let entity_rows = sqlx::query(
+            r#"SELECT jsonb_array_elements_text(entities) AS entity, COUNT(*) as count
+               FROM memories
+               WHERE jsonb_array_length(entities) > 0
+               GROUP BY entity
+               ORDER BY count DESC
+               LIMIT 20"#
+        )
+        .fetch_all(&self.pool)
+        .await?;
+
+        let mut top_entities = Vec::new();
+        for row in entity_rows {
+            let entity: String = row.get("entity");
+            let count: i64 = row.get("count");
+            top_entities.push(EntityStat {
+                entity,
+                count: count as usize,
+            });
+        }
+
+        // Get recent memories (last 24 hours)
+        let recent_memories: i64 = sqlx::query(
+            "SELECT COUNT(*) FROM memories WHERE created_at > NOW() - INTERVAL '24 hours'"
+        )
+        .fetch_one(&self.pool)
+        .await?
+        .get("count");
+
+        // Get average confidence for opinions
+        let avg_confidence: Option<f32> = sqlx::query("SELECT AVG(confidence) FROM memories WHERE network_type = 'opinion' AND confidence IS NOT NULL")
+            .fetch_one(&self.pool)
+            .await?
+            .try_get("avg")
+            .ok();
+
+        Ok(MemoryStats {
+            total_memories: total_memories as usize,
+            total_edges: total_edges as usize,
+            memories_by_network: NetworkStats {
+                world: world_count as usize,
+                experience: experience_count as usize,
+                opinion: opinion_count as usize,
+                observation: observation_count as usize,
+            },
+            edges_by_type: EdgeTypeStats {
+                temporal: temporal_count as usize,
+                semantic: semantic_count as usize,
+                entity: entity_count as usize,
+                causal: causal_count as usize,
+            },
+            top_entities,
+            recent_memories: recent_memories as usize,
+            average_confidence: avg_confidence,
+        })
+    }
+
     /// Updates the confidence score of an opinion memory.
     ///
     /// Only affects rows where `network_type = 'opinion'`.

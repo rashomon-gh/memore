@@ -13,6 +13,7 @@
 //! - [`tempr`] — Retain & Recall pipeline
 //! - [`cara`] — Reflect pipeline
 
+mod api;
 mod cara;
 mod config;
 mod llm;
@@ -21,6 +22,8 @@ mod storage;
 mod tempr;
 
 use std::io::{self, Write};
+use std::sync::Arc;
+use std::env;
 
 use anyhow::Result;
 use cara::CaraPipeline;
@@ -29,6 +32,7 @@ use llm::LLMClient;
 use models::AgentProfile;
 use storage::Storage;
 use tempr::TemprPipeline;
+use api::WebServer;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -41,14 +45,22 @@ async fn main() -> Result<()> {
 
     let config = Config::load()?;
 
+    // Parse command-line arguments
+    let args: Vec<String> = env::args().collect();
+    let web_mode = args.len() > 1 && (args[1] == "--web" || args[1] == "--serve");
+    let cli_mode = !web_mode || (args.len() > 2 && args[2] == "--cli");
+
     println!("Connecting to database at {}...", config.database.url);
-    let storage = Storage::connect(&config.database.url).await?;
+    let storage = Arc::new(Storage::connect(&config.database.url).await?);
     storage.init_schema().await?;
     println!("Database schema initialized.");
 
     let llm = LLMClient::new(&config.llm);
     let embedding_dim = config.llm.embedding_dim;
-    let tempr = TemprPipeline::new(llm, storage, embedding_dim);
+
+    // Create a new storage connection for TEMPR (it takes ownership)
+    let storage_for_tempr = Storage::connect(&config.database.url).await?;
+    let tempr = TemprPipeline::new(llm, storage_for_tempr, embedding_dim);
 
     let profile = AgentProfile {
         name: "Hindsight".into(),
@@ -61,8 +73,49 @@ async fn main() -> Result<()> {
 
     let cara = CaraPipeline::new(profile, tempr);
 
-    println!("Hindsight agent ready. Type a message (or 'quit' to exit):\n");
+    // Start web server if enabled or requested
+    if web_mode || config.web.enabled {
+        let web_host = config.web.host.clone();
+        let web_port = config.web.port;
 
+        let web_config = api::WebConfig {
+            host: web_host.clone(),
+            port: web_port,
+            enabled: true,
+        };
+
+        let web_server = WebServer::new(web_config, storage.clone());
+
+        if cli_mode {
+            // Run both CLI and web server
+            println!("🌐 Starting web server at http://{}:{}...", web_host, web_port);
+            let web_handle = tokio::spawn(async move {
+                if let Err(e) = web_server.run().await {
+                    tracing::error!("Web server error: {}", e);
+                }
+            });
+
+            println!("Hindsight agent ready. Type a message (or 'quit' to exit):\n");
+            run_cli_repl(cara).await?;
+
+            // Cancel web server when CLI exits
+            web_handle.abort();
+        } else {
+            // Run web server only
+            web_server.run().await?;
+            return Ok(());
+        }
+    } else {
+        println!("Hindsight agent ready. Type a message (or 'quit' to exit):\n");
+        run_cli_repl(cara).await?;
+    }
+
+    println!("Goodbye!");
+    Ok(())
+}
+
+/// Run the interactive CLI REPL.
+async fn run_cli_repl(cara: CaraPipeline) -> Result<()> {
     let stdin = io::stdin();
     loop {
         print!("> ");
@@ -94,7 +147,5 @@ async fn main() -> Result<()> {
             Err(e) => tracing::error!("Reflect error: {}", e),
         }
     }
-
-    println!("Goodbye!");
     Ok(())
 }
