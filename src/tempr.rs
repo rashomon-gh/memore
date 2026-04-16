@@ -70,7 +70,7 @@ impl TemprPipeline {
     /// bumped by 0.05 (capped at 1.0).
     ///
     /// Returns the list of newly created [`MemoryUnit`]s.
-    pub async fn retain(&self, conversation: &str) -> Result<Vec<MemoryUnit>> {
+    pub async fn retain(&self, conversation: &str, chat_id: Option<Uuid>) -> Result<Vec<MemoryUnit>> {
         let system_prompt = r#"You are a memory extraction system. Analyze the conversation and extract structured facts.
 
 For each fact, provide a JSON object with:
@@ -130,6 +130,7 @@ If no facts can be extracted, return: {"facts": []}"#;
                     &embedding,
                     &fact.entities,
                     fact.confidence,
+                    chat_id,
                 )
                 .await?;
 

@@ -29,8 +29,8 @@ impl CaraPipeline {
     }
 
     /// Delegates to [`TemprPipeline::retain`].
-    pub async fn retain(&self, conversation: &str) -> Result<Vec<MemoryUnit>> {
-        self.tempr.retain(conversation).await
+    pub async fn retain(&self, conversation: &str, chat_id: Option<Uuid>) -> Result<Vec<MemoryUnit>> {
+        self.tempr.retain(conversation, chat_id).await
     }
 
     /// Recalls relevant memories, formats a system prompt with the agent's
@@ -39,7 +39,7 @@ impl CaraPipeline {
     ///
     /// `token_budget` controls how many tokens of recalled context are
     /// injected into the prompt.
-    pub async fn reflect(&self, user_message: &str, token_budget: usize) -> Result<(String, Vec<MemoryUnit>)> {
+    pub async fn reflect(&self, user_message: &str, token_budget: usize, chat_id: Option<Uuid>) -> Result<(String, Vec<MemoryUnit>)> {
         let recalled = self.tempr.recall(user_message, token_budget).await?;
 
         let memory_context = if recalled.is_empty() {
@@ -129,6 +129,7 @@ You may include multiple opinion tags. Do not mention the XML tags in your visib
                     &embedding,
                     &[],
                     Some(*confidence),
+                    chat_id,
                 )
                 .await?;
             tracing::info!(
