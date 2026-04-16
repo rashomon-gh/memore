@@ -15,6 +15,8 @@ This project implements the agentic memory management architecture proposed in t
 - **Interactive Web Dashboard**: Real-time visualization of memory networks, relationships, and analytics
 - **Multi-Strategy Retrieval**: Parallel semantic, keyword, temporal, and graph traversal search
 - **Agent Profile System**: Configurable behavioral parameters (skepticism, literalism, empathy)
+- **Document Processing**: Upload and process PDF and Markdown files to build memories from existing knowledge
+- **Incremental Learning**: File hashing prevents reprocessing unchanged documents
 
 ## Requirements
 
@@ -93,6 +95,63 @@ curl http://localhost:8080/api/graph
 # Get statistics
 curl http://localhost:8080/api/stats
 ```
+
+### File Processing API
+
+Upload and process documents to automatically extract memories:
+
+**File Upload Endpoints:**
+- `POST /api/files/upload` - Upload and process a file
+- `GET /api/files` - List all processed files
+- `GET /api/files/:id` - Get specific file metadata
+
+**Supported File Types:**
+- **PDF** - Text extraction from PDF documents
+- **Markdown** - Structured content extraction with code block detection
+- **Text** - Plain text file processing
+
+**File Processing Pipeline:**
+
+1. Upload file via multipart form data
+2. Extract text content using appropriate parser
+3. Split content into intelligent chunks (2000 chars with overlap)
+4. Process each chunk through LLM to extract structured facts
+5. Create memories in appropriate networks with embeddings
+6. Store file metadata and track processing status
+7. Skip reprocessing using SHA256 file hashing
+
+Example usage:
+
+```bash
+# Upload a PDF file
+curl -X POST -F "file=@document.pdf" http://localhost:8080/api/files/upload
+
+# Upload a Markdown file
+curl -X POST -F "file=@knowledge.md" http://localhost:8080/api/files/upload
+
+# List all processed files
+curl http://localhost:8080/api/files
+
+# Get specific file details
+curl http://localhost:8080/api/files/{file_id}
+```
+
+Example response:
+
+```json
+{
+  "status": "success",
+  "file_id": "550e8400-e29b-41d4-a716-446655440000",
+  "filename": "knowledge.md",
+  "memories_created": 15,
+  "processing_time_ms": 2340,
+  "file_type": "markdown"
+}
+```
+
+### Incremental Processing
+
+Files are hashed using SHA256 to prevent reprocessing unchanged documents. If you upload the same file twice, the system will recognize it and skip processing, returning the existing file metadata.
 
 ## Configuration
 
