@@ -48,7 +48,6 @@ impl WebServer {
         Self { config, storage }
     }
 
-    /// Start the web server (blocks until shutdown).
     pub async fn run(&self) -> Result<()> {
         if !self.config.enabled {
             info!("Web server is disabled in configuration");
@@ -59,7 +58,6 @@ impl WebServer {
             storage: self.storage.clone(),
         };
 
-        // Build the application router with static file serving
         let app = create_api_router()
             .nest_service("/", ServeDir::new("static"))
             .layer(
@@ -72,7 +70,6 @@ impl WebServer {
             .layer(TraceLayer::new_for_http())
             .with_state(state);
 
-        // Serve static files from the static directory
         let serve_dir = tokio::fs::read_dir("static").await;
         if serve_dir.is_ok() {
             info!("Serving static files from ./static directory");
@@ -85,39 +82,8 @@ impl WebServer {
         info!("📊 Dashboard available at http://{}/", addr);
         info!("🔌 API endpoints available at http://{}/api/", addr);
 
-        axum::serve(listener, app)
-            .with_graceful_shutdown(shutdown_signal())
-            .await?;
+        axum::serve(listener, app).await?;
 
         Ok(())
-    }
-}
-
-/// Signal handler for graceful shutdown.
-async fn shutdown_signal() {
-    let ctrl_c = async {
-        tokio::signal::ctrl_c()
-            .await
-            .expect("failed to install CTRL+C handler");
-    };
-
-    #[cfg(unix)]
-    let terminate = async {
-        tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
-            .expect("failed to install signal handler")
-            .recv()
-            .await;
-    };
-
-    #[cfg(not(unix))]
-    let terminate = std::future::pending::<()>();
-
-    tokio::select! {
-        _ = ctrl_c => {
-            info!("Received CTRL+C, shutting down web server gracefully...");
-        },
-        _ = terminate => {
-            info!("Received termination signal, shutting down web server gracefully...");
-        },
     }
 }

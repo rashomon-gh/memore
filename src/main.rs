@@ -33,6 +33,7 @@ use models::AgentProfile;
 use storage::Storage;
 use tempr::TemprPipeline;
 use api::WebServer;
+use tokio::io::AsyncBufReadExt;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -45,7 +46,6 @@ async fn main() -> Result<()> {
 
     let config = Config::load()?;
 
-    // Parse command-line arguments
     let args: Vec<String> = env::args().collect();
     let web_mode = args.len() > 1 && (args[1] == "--web" || args[1] == "--serve");
     let cli_mode = !web_mode || (args.len() > 2 && args[2] == "--cli");
@@ -58,7 +58,6 @@ async fn main() -> Result<()> {
     let llm = LLMClient::new(&config.llm);
     let embedding_dim = config.llm.embedding_dim;
 
-    // Create a new storage connection for TEMPR (it takes ownership)
     let storage_for_tempr = Storage::connect(&config.database.url).await?;
     let tempr = TemprPipeline::new(llm, storage_for_tempr, embedding_dim);
 
@@ -73,7 +72,6 @@ async fn main() -> Result<()> {
 
     let cara = CaraPipeline::new(profile, tempr);
 
-    // Start web server if enabled or requested
     if web_mode || config.web.enabled {
         let web_host = config.web.host.clone();
         let web_port = config.web.port;
@@ -87,23 +85,19 @@ async fn main() -> Result<()> {
         let web_server = WebServer::new(web_config, storage.clone());
 
         if cli_mode {
-            // Run both CLI and web server
             println!("🌐 Starting web server at http://{}:{}...", web_host, web_port);
-            let web_handle = tokio::spawn(async move {
-                if let Err(e) = web_server.run().await {
-                    tracing::error!("Web server error: {}", e);
-                }
-            });
-
             println!("Hindsight agent ready. Type a message (or 'quit' to exit):\n");
-            run_cli_repl(cara).await?;
 
-            // Cancel web server when CLI exits
-            web_handle.abort();
+            tokio::select! {
+                result = web_server.run() => {
+                    result?;
+                }
+                result = run_cli_repl(cara) => {
+                    result?;
+                }
+            }
         } else {
-            // Run web server only
             web_server.run().await?;
-            return Ok(());
         }
     } else {
         println!("Hindsight agent ready. Type a message (or 'quit' to exit):\n");
@@ -114,15 +108,19 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
-/// Run the interactive CLI REPL.
 async fn run_cli_repl(cara: CaraPipeline) -> Result<()> {
-    let stdin = io::stdin();
+    let stdin = tokio::io::BufReader::new(tokio::io::stdin());
+    let mut lines = stdin.lines();
+
     loop {
         print!("> ");
         io::stdout().flush()?;
 
-        let mut input = String::new();
-        stdin.read_line(&mut input)?;
+        let input: String = match lines.next_line().await? {
+            Some(line) => line,
+            None => break,
+        };
+
         let input = input.trim();
 
         if input.eq_ignore_ascii_case("quit") || input.eq_ignore_ascii_case("exit") {
