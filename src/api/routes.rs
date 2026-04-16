@@ -7,7 +7,7 @@ use axum::{
     extract::{Path, Query, State},
     http::StatusCode,
     response::Json,
-    routing::{get, post},
+    routing::{delete, get, post},
     Router,
 };
 use serde::Deserialize;
@@ -54,6 +54,9 @@ pub fn create_api_router() -> Router<ApiState> {
         .route("/api/stats", get(get_stats))
         .route("/api/networks/:network_type", get(get_by_network))
         .route("/api/chat", post(chat))
+        .route("/api/chats", get(list_chats))
+        .route("/api/chats/:id", get(get_chat))
+        .route("/api/chats/:id", delete(delete_chat))
 }
 
 /// GET /api/memories - List and search memories with pagination.
@@ -310,19 +313,55 @@ pub async fn chat(
         return Err(StatusCode::BAD_REQUEST);
     }
 
+    let chat_id = match req.chat_id {
+        Some(id) => id,
+        None => {
+            let id = Uuid::new_v4();
+            let title: String = req.message.chars().take(50).collect();
+            let title = if req.message.chars().count() > 50 {
+                format!("{}...", title)
+            } else {
+                title
+            };
+            state.storage.create_chat(id, &title).await.map_err(|e| {
+                tracing::error!("Create chat error: {}", e);
+                StatusCode::INTERNAL_SERVER_ERROR
+            })?;
+            id
+        }
+    };
+
+    state
+        .storage
+        .add_chat_message(Uuid::new_v4(), chat_id, "user", &req.message)
+        .await
+        .map_err(|e| {
+            tracing::error!("Store message error: {}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+
     let memories = state
         .cara
-        .retain(&req.message)
+        .retain(&req.message, Some(chat_id))
         .await
         .map_err(|e| {
             tracing::error!("Retain error: {}", e);
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
 
-    let (response, opinions) = state.cara.reflect(&req.message, 2000).await.map_err(|e| {
+    let (response, opinions) = state.cara.reflect(&req.message, 2000, Some(chat_id)).await.map_err(|e| {
         tracing::error!("Reflect error: {}", e);
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
+
+    state
+        .storage
+        .add_chat_message(Uuid::new_v4(), chat_id, "assistant", &response)
+        .await
+        .map_err(|e| {
+            tracing::error!("Store message error: {}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
 
     let new_memories: Vec<ChatMemory> = memories
         .into_iter()
@@ -347,8 +386,100 @@ pub async fn chat(
         .collect();
 
     Ok(Json(ChatResponse {
+        chat_id,
         response,
         new_memories,
         opinions: chat_opinions,
     }))
+}
+
+/// GET /api/chats - List all chat sessions.
+pub async fn list_chats(
+    State(state): State<ApiState>,
+) -> Result<Json<Vec<ChatSummary>>, StatusCode> {
+    let chats = state.storage.list_chats().await.map_err(|e| {
+        tracing::error!("List chats error: {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+
+    let summaries: Vec<ChatSummary> = chats
+        .into_iter()
+        .map(|(id, title, created_at, updated_at)| ChatSummary {
+            id,
+            title,
+            created_at,
+            updated_at,
+        })
+        .collect();
+
+    Ok(Json(summaries))
+}
+
+/// GET /api/chats/:id - Get a chat with messages and linked memories.
+pub async fn get_chat(
+    State(state): State<ApiState>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<ChatDetail>, StatusCode> {
+    let chats = state.storage.list_chats().await.map_err(|e| {
+        tracing::error!("Get chat error: {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+
+    let (title, created_at, updated_at) = chats
+        .iter()
+        .find(|(cid, _, _, _)| cid == &id)
+        .map(|(_, t, ca, ua)| (t.clone(), *ca, *ua))
+        .ok_or(StatusCode::NOT_FOUND)?;
+
+    let messages = state.storage.get_chat_messages(id).await.map_err(|e| {
+        tracing::error!("Get chat messages error: {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+
+    let chat_messages: Vec<ChatMessageEntry> = messages
+        .into_iter()
+        .map(|(_, role, content, created_at)| ChatMessageEntry {
+            role,
+            content,
+            created_at,
+        })
+        .collect();
+
+    let memories = state.storage.get_memories_by_chat(id).await.map_err(|e| {
+        tracing::error!("Get chat memories error: {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+
+    let chat_memories: Vec<ChatMemory> = memories
+        .into_iter()
+        .map(|m| ChatMemory {
+            id: m.id,
+            network: m.network.as_str().to_string(),
+            content: m.content,
+            entities: m.entities,
+            confidence: m.confidence,
+        })
+        .collect();
+
+    Ok(Json(ChatDetail {
+        id,
+        title,
+        created_at,
+        updated_at,
+        messages: chat_messages,
+        memories: chat_memories,
+    }))
+}
+
+/// DELETE /api/chats/:id - Delete a chat and all its associated data.
+pub async fn delete_chat(
+    State(state): State<ApiState>,
+    Path(id): Path<Uuid>,
+) -> Result<StatusCode, StatusCode> {
+    state.storage.delete_chat(id).await.map_err(|e| {
+        tracing::error!("Delete chat error: {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+
+    Ok(StatusCode::NO_CONTENT)
 }

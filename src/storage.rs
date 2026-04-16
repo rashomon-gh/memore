@@ -34,6 +34,20 @@ impl Storage {
         let stmts: &[&str] = &[
             "CREATE EXTENSION IF NOT EXISTS vector",
             "CREATE EXTENSION IF NOT EXISTS pg_trgm",
+            "CREATE TABLE IF NOT EXISTS chats (
+                id UUID PRIMARY KEY,
+                title TEXT NOT NULL,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )",
+            "CREATE TABLE IF NOT EXISTS chat_messages (
+                id UUID PRIMARY KEY,
+                chat_id UUID NOT NULL REFERENCES chats(id) ON DELETE CASCADE,
+                role TEXT NOT NULL CHECK (role IN ('user', 'assistant')),
+                content TEXT NOT NULL,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )",
+            "CREATE INDEX IF NOT EXISTS idx_chat_messages_chat ON chat_messages(chat_id)",
             "CREATE TABLE IF NOT EXISTS memories (
                 id UUID PRIMARY KEY,
                 network_type TEXT NOT NULL CHECK (network_type IN ('world', 'experience', 'opinion', 'observation')),
@@ -41,6 +55,7 @@ impl Storage {
                 embedding vector(768),
                 entities JSONB NOT NULL DEFAULT '[]',
                 confidence REAL,
+                source_chat_id UUID REFERENCES chats(id) ON DELETE CASCADE,
                 created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                 updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
             )",
@@ -53,6 +68,7 @@ impl Storage {
                 created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
             )",
             "CREATE INDEX IF NOT EXISTS idx_memories_network ON memories(network_type)",
+            "CREATE INDEX IF NOT EXISTS idx_memories_source_chat ON memories(source_chat_id)",
             "CREATE INDEX IF NOT EXISTS idx_edges_source ON edges(source_id)",
             "CREATE INDEX IF NOT EXISTS idx_edges_target ON edges(target_id)",
             "CREATE INDEX IF NOT EXISTS idx_edges_type ON edges(edge_type)",
@@ -63,6 +79,18 @@ impl Storage {
         for stmt in stmts {
             sqlx::query(stmt).execute(&self.pool).await?;
         }
+
+        let _ = sqlx::query(
+            "ALTER TABLE memories ADD COLUMN IF NOT EXISTS source_chat_id UUID REFERENCES chats(id) ON DELETE CASCADE",
+        )
+        .execute(&self.pool)
+        .await?;
+
+        let _ = sqlx::query(
+            "CREATE INDEX IF NOT EXISTS idx_memories_source_chat ON memories(source_chat_id)",
+        )
+        .execute(&self.pool)
+        .await?;
 
         Ok(())
     }
@@ -76,13 +104,14 @@ impl Storage {
         embedding: &[f32],
         entities: &[String],
         confidence: Option<f32>,
+        source_chat_id: Option<Uuid>,
     ) -> Result<()> {
         let embed_str = format_vector(embedding);
         let entities_json = serde_json::to_value(entities)?;
 
         sqlx::query(
-            r#"INSERT INTO memories (id, network_type, content, embedding, entities, confidence, created_at, updated_at)
-               VALUES ($1, $2, $3, $4::vector, $5, $6, NOW(), NOW())"#,
+            r#"INSERT INTO memories (id, network_type, content, embedding, entities, confidence, source_chat_id, created_at, updated_at)
+               VALUES ($1, $2, $3, $4::vector, $5, $6, $7, NOW(), NOW())"#,
         )
         .bind(id)
         .bind(network.as_str())
@@ -90,6 +119,7 @@ impl Storage {
         .bind(&embed_str)
         .bind(entities_json)
         .bind(confidence)
+        .bind(source_chat_id)
         .execute(&self.pool)
         .await?;
 
@@ -526,6 +556,92 @@ impl Storage {
         }
 
         Ok(results)
+    }
+
+    pub async fn create_chat(&self, id: Uuid, title: &str) -> Result<()> {
+        sqlx::query(
+            "INSERT INTO chats (id, title, created_at, updated_at) VALUES ($1, $2, NOW(), NOW())",
+        )
+        .bind(id)
+        .bind(title)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    pub async fn add_chat_message(&self, id: Uuid, chat_id: Uuid, role: &str, content: &str) -> Result<()> {
+        sqlx::query(
+            "INSERT INTO chat_messages (id, chat_id, role, content, created_at) VALUES ($1, $2, $3, $4, NOW())",
+        )
+        .bind(id)
+        .bind(chat_id)
+        .bind(role)
+        .bind(content)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    pub async fn list_chats(&self) -> Result<Vec<(Uuid, String, DateTime<Utc>, DateTime<Utc>)>> {
+        let rows = sqlx::query(
+            "SELECT id, title, created_at, updated_at FROM chats ORDER BY updated_at DESC",
+        )
+        .fetch_all(&self.pool)
+        .await?;
+
+        let mut results = Vec::new();
+        for row in rows {
+            let id: Uuid = row.get("id");
+            let title: String = row.get("title");
+            let created_at: DateTime<Utc> = row.get("created_at");
+            let updated_at: DateTime<Utc> = row.get("updated_at");
+            results.push((id, title, created_at, updated_at));
+        }
+        Ok(results)
+    }
+
+    pub async fn get_chat_messages(&self, chat_id: Uuid) -> Result<Vec<(Uuid, String, String, DateTime<Utc>)>> {
+        let rows = sqlx::query(
+            "SELECT id, role, content, created_at FROM chat_messages WHERE chat_id = $1 ORDER BY created_at ASC",
+        )
+        .bind(chat_id)
+        .fetch_all(&self.pool)
+        .await?;
+
+        let mut results = Vec::new();
+        for row in rows {
+            let id: Uuid = row.get("id");
+            let role: String = row.get("role");
+            let content: String = row.get("content");
+            let created_at: DateTime<Utc> = row.get("created_at");
+            results.push((id, role, content, created_at));
+        }
+        Ok(results)
+    }
+
+    pub async fn get_memories_by_chat(&self, chat_id: Uuid) -> Result<Vec<MemoryUnit>> {
+        let rows = sqlx::query(
+            r#"SELECT id, network_type, content, embedding::text AS embedding_text,
+                      entities, confidence, created_at, updated_at
+               FROM memories WHERE source_chat_id = $1 ORDER BY created_at ASC"#,
+        )
+        .bind(chat_id)
+        .fetch_all(&self.pool)
+        .await?;
+
+        let mut results = Vec::new();
+        for row in rows {
+            results.push(row_to_memory(&row)?);
+        }
+        Ok(results)
+    }
+
+    pub async fn delete_chat(&self, chat_id: Uuid) -> Result<()> {
+        sqlx::query("DELETE FROM chats WHERE id = $1")
+            .bind(chat_id)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
     }
 }
 

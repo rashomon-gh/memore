@@ -126,11 +126,13 @@ pub struct EntityList {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChatRequest {
     pub message: String,
+    pub chat_id: Option<Uuid>,
 }
 
 /// Chat response returned to the web UI.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChatResponse {
+    pub chat_id: Uuid,
     pub response: String,
     pub new_memories: Vec<ChatMemory>,
     pub opinions: Vec<ChatMemory>,
@@ -145,4 +147,31 @@ pub struct ChatMemory {
     pub entities: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub confidence: Option<f32>,
+}
+
+/// A chat session summary for the history list.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChatSummary {
+    pub id: Uuid,
+    pub title: String,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+/// Full chat detail with messages and linked memories.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChatDetail {
+    pub id: Uuid,
+    pub title: String,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+    pub messages: Vec<ChatMessageEntry>,
+    pub memories: Vec<ChatMemory>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChatMessageEntry {
+    pub role: String,
+    pub content: String,
+    pub created_at: DateTime<Utc>,
 }

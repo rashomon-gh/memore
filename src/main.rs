@@ -131,7 +131,7 @@ async fn run_cli_repl(cara: Arc<CaraPipeline>) -> Result<()> {
             continue;
         }
 
-        match cara.retain(input).await {
+        match cara.retain(input, None).await {
             Ok(memories) => {
                 if !memories.is_empty() {
                     tracing::info!("Retained {} new memories", memories.len());
@@ -140,7 +140,7 @@ async fn run_cli_repl(cara: Arc<CaraPipeline>) -> Result<()> {
             Err(e) => tracing::error!("Retain error: {}", e),
         }
 
-        match cara.reflect(input, 2000).await {
+        match cara.reflect(input, 2000, None).await {
             Ok((response, _opinions)) => println!("\n{}\n", response),
             Err(e) => tracing::error!("Reflect error: {}", e),
         }

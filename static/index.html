@@ -236,65 +236,99 @@
 
         <!-- Chat Tab -->
         <div x-show="activeTab === 'chat'" x-transition>
-            <div class="bg-white rounded-lg shadow flex flex-col" style="height: 600px;">
-                <div class="p-4 border-b">
-                    <h2 class="text-lg font-semibold">Chat with Hindsight</h2>
-                    <p class="text-sm text-gray-500">New memories will appear as colored badges below each response.</p>
-                </div>
-
-                <div class="flex-1 overflow-y-auto p-4 space-y-4" id="chatMessages">
-                    <template x-for="(msg, idx) in chatMessages" :key="idx">
-                        <div>
-                            <div :class="msg.role === 'user' ? 'flex justify-end' : 'flex justify-start'">
-                                <div :class="msg.role === 'user'
-                                    ? 'bg-blue-600 text-white rounded-lg px-4 py-2 max-w-[80%]'
-                                    : 'bg-gray-100 text-gray-900 rounded-lg px-4 py-2 max-w-[80%]'">
-                                    <p class="whitespace-pre-wrap" x-text="msg.text"></p>
+            <div class="flex gap-6" style="height: 600px;">
+                <!-- Chat History Sidebar -->
+                <div class="w-64 bg-white rounded-lg shadow flex flex-col flex-shrink-0">
+                    <div class="p-3 border-b flex items-center justify-between">
+                        <h3 class="text-sm font-semibold text-gray-700">History</h3>
+                        <button @click="newChat()" class="text-blue-600 hover:text-blue-800 text-sm font-medium">+ New</button>
+                    </div>
+                    <div class="flex-1 overflow-y-auto">
+                        <template x-for="chat in chatHistory" :key="chat.id">
+                            <div :class="['p-3 cursor-pointer border-b hover:bg-gray-50 group', currentChatId === chat.id ? 'bg-blue-50 border-l-2 border-l-blue-600' : '']"
+                                 @click="loadChat(chat.id)">
+                                <div class="flex items-start justify-between">
+                                    <p class="text-sm text-gray-800 truncate flex-1" x-text="chat.title"></p>
+                                    <button @click.stop="deleteChat(chat.id)"
+                                            class="text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100 ml-1 flex-shrink-0"
+                                            title="Delete chat">
+                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
+                                        </svg>
+                                    </button>
                                 </div>
+                                <p class="text-xs text-gray-400 mt-1" x-text="formatDate(chat.updated_at)"></p>
                             </div>
-                            <template x-if="msg.memories && msg.memories.length > 0">
-                                <div class="mt-1 flex flex-wrap gap-1.5 ml-0 mr-0" style="max-width:80%;">
-                                    <template x-for="mem in msg.memories" :key="mem.id">
-                                        <span :class="['network-badge', 'network-' + mem.network, 'cursor-pointer']"
-                                              :title="mem.content"
-                                              @click="inspectMemory(mem.id)"
-                                              x-text="mem.network + ': ' + (mem.content.length > 40 ? mem.content.substring(0, 40) + '...' : mem.content)">
-                                        </span>
-                                    </template>
-                                </div>
-                            </template>
-                            <template x-if="msg.opinions && msg.opinions.length > 0">
-                                <div class="mt-1.5 space-y-1" style="max-width:80%;">
-                                    <template x-for="op in msg.opinions" :key="op.id">
-                                        <div class="flex items-center gap-1.5 cursor-pointer" @click="inspectMemory(op.id)">
-                                            <span class="network-badge network-opinion">opinion</span>
-                                            <span class="text-xs text-gray-600" x-text="(op.confidence * 100).toFixed(0) + '% confident'"></span>
-                                            <span class="text-xs text-gray-700 truncate" style="max-width: 300px;" :title="op.content" x-text="op.content"></span>
-                                        </div>
-                                    </template>
-                                </div>
-                            </template>
-                        </div>
-                    </template>
-                    <div x-show="chatLoading" class="flex justify-start">
-                        <div class="bg-gray-100 rounded-lg px-4 py-2 text-gray-500 animate-pulse">
-                            Thinking...
+                        </template>
+                        <div x-show="chatHistory.length === 0" class="p-4 text-center text-sm text-gray-400">
+                            No chats yet
                         </div>
                     </div>
                 </div>
 
-                <div class="p-4 border-t">
-                    <div class="flex items-center space-x-3">
-                        <input type="text" x-model="chatInput"
-                               @keydown.enter="sendChat()"
-                               :disabled="chatLoading"
-                               placeholder="Type a message..."
-                               class="flex-1 border rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:opacity-50">
-                        <button @click="sendChat()"
-                                :disabled="chatLoading || !chatInput.trim()"
-                                class="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed">
-                            Send
-                        </button>
+                <!-- Chat Area -->
+                <div class="bg-white rounded-lg shadow flex flex-col flex-1 min-w-0">
+                    <div class="p-4 border-b flex items-center justify-between">
+                        <div>
+                            <h2 class="text-lg font-semibold" x-text="currentChatId ? 'Continue Chat' : 'New Chat'"></h2>
+                            <p class="text-sm text-gray-500">Memories appear as colored badges below responses.</p>
+                        </div>
+                    </div>
+
+                    <div class="flex-1 overflow-y-auto p-4 space-y-4" id="chatMessages">
+                        <template x-for="(msg, idx) in chatMessages" :key="idx">
+                            <div>
+                                <div :class="msg.role === 'user' ? 'flex justify-end' : 'flex justify-start'">
+                                    <div :class="msg.role === 'user'
+                                        ? 'bg-blue-600 text-white rounded-lg px-4 py-2 max-w-[80%]'
+                                        : 'bg-gray-100 text-gray-900 rounded-lg px-4 py-2 max-w-[80%]'">
+                                        <p class="whitespace-pre-wrap" x-text="msg.text"></p>
+                                    </div>
+                                </div>
+                                <template x-if="msg.memories && msg.memories.length > 0">
+                                    <div class="mt-1 flex flex-wrap gap-1.5 ml-0 mr-0" style="max-width:80%;">
+                                        <template x-for="mem in msg.memories" :key="mem.id">
+                                            <span :class="['network-badge', 'network-' + mem.network, 'cursor-pointer']"
+                                                  :title="mem.content"
+                                                  @click="inspectMemory(mem.id)"
+                                                  x-text="mem.network + ': ' + (mem.content.length > 40 ? mem.content.substring(0, 40) + '...' : mem.content)">
+                                            </span>
+                                        </template>
+                                    </div>
+                                </template>
+                                <template x-if="msg.opinions && msg.opinions.length > 0">
+                                    <div class="mt-1.5 space-y-1" style="max-width:80%;">
+                                        <template x-for="op in msg.opinions" :key="op.id">
+                                            <div class="flex items-center gap-1.5 cursor-pointer" @click="inspectMemory(op.id)">
+                                                <span class="network-badge network-opinion">opinion</span>
+                                                <span class="text-xs text-gray-600" x-text="(op.confidence * 100).toFixed(0) + '% confident'"></span>
+                                                <span class="text-xs text-gray-700 truncate" style="max-width: 300px;" :title="op.content" x-text="op.content"></span>
+                                            </div>
+                                        </template>
+                                    </div>
+                                </template>
+                            </div>
+                        </template>
+                        <div x-show="chatLoading" class="flex justify-start">
+                            <div class="bg-gray-100 rounded-lg px-4 py-2 text-gray-500 animate-pulse">
+                                Thinking...
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="p-4 border-t">
+                        <div class="flex items-center space-x-3">
+                            <input type="text" x-model="chatInput"
+                                   @keydown.enter="sendChat()"
+                                   :disabled="chatLoading"
+                                   placeholder="Type a message..."
+                                   class="flex-1 border rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:opacity-50">
+                            <button @click="sendChat()"
+                                    :disabled="chatLoading || !chatInput.trim()"
+                                    class="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed">
+                                Send
+                            </button>
+                        </div>
                     </div>
                 </div>
             </div>

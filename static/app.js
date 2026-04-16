@@ -42,15 +42,20 @@ function hindsightApp() {
         chatMessages: [],
         chatInput: '',
         chatLoading: false,
+        currentChatId: null,
+        chatHistory: [],
 
         async init() {
             await this.loadStats();
             await this.loadGraphData();
+            await this.loadChatHistory();
 
-            // Load analytics when tab is clicked
             this.$watch('activeTab', (value) => {
                 if (value === 'analytics') {
                     this.$nextTick(() => this.loadAnalytics());
+                }
+                if (value === 'chat') {
+                    this.loadChatHistory();
                 }
             });
         },
@@ -213,7 +218,7 @@ function hindsightApp() {
             const message = this.chatInput.trim();
             if (!message || this.chatLoading) return;
 
-            this.chatMessages.push({ role: 'user', text: message, memories: [] });
+            this.chatMessages.push({ role: 'user', text: message, memories: [], opinions: [] });
             this.chatInput = '';
             this.chatLoading = true;
 
@@ -221,12 +226,14 @@ function hindsightApp() {
                 const response = await fetch(`${API_BASE}/chat`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ message })
+                    body: JSON.stringify({ message, chat_id: this.currentChatId })
                 });
 
                 if (!response.ok) throw new Error('Chat request failed');
 
                 const data = await response.json();
+                this.currentChatId = data.chat_id;
+
                 this.chatMessages.push({
                     role: 'assistant',
                     text: data.response,
@@ -234,13 +241,14 @@ function hindsightApp() {
                     opinions: data.opinions || []
                 });
 
-                await this.loadStats();
+                await Promise.all([this.loadStats(), this.loadChatHistory()]);
             } catch (error) {
                 console.error('Chat error:', error);
                 this.chatMessages.push({
                     role: 'assistant',
                     text: 'Sorry, something went wrong. Please try again.',
-                    memories: []
+                    memories: [],
+                    opinions: []
                 });
             } finally {
                 this.chatLoading = false;
@@ -248,6 +256,66 @@ function hindsightApp() {
                     const el = document.getElementById('chatMessages');
                     if (el) el.scrollTop = el.scrollHeight;
                 });
+            }
+        },
+
+        async loadChatHistory() {
+            try {
+                const response = await fetch(`${API_BASE}/chats`);
+                if (!response.ok) return;
+                this.chatHistory = await response.json();
+            } catch (error) {
+                console.error('Failed to load chat history:', error);
+            }
+        },
+
+        async loadChat(chatId) {
+            try {
+                const response = await fetch(`${API_BASE}/chats/${chatId}`);
+                if (!response.ok) return;
+                const data = await response.json();
+
+                this.currentChatId = data.id;
+                this.chatMessages = data.messages.map(m => ({
+                    role: m.role,
+                    text: m.content,
+                    memories: [],
+                    opinions: []
+                }));
+
+                if (data.memories && data.memories.length > 0) {
+                    const lastAssistantIdx = this.chatMessages.map((m, i) => m.role === 'assistant' ? i : -1).filter(i => i >= 0).pop();
+                    if (lastAssistantIdx !== undefined) {
+                        this.chatMessages[lastAssistantIdx].memories = data.memories.filter(m => m.network !== 'opinion');
+                        this.chatMessages[lastAssistantIdx].opinions = data.memories.filter(m => m.network === 'opinion');
+                    }
+                }
+
+                this.$nextTick(() => {
+                    const el = document.getElementById('chatMessages');
+                    if (el) el.scrollTop = el.scrollHeight;
+                });
+            } catch (error) {
+                console.error('Failed to load chat:', error);
+            }
+        },
+
+        newChat() {
+            this.currentChatId = null;
+            this.chatMessages = [];
+        },
+
+        async deleteChat(chatId) {
+            try {
+                const response = await fetch(`${API_BASE}/chats/${chatId}`, { method: 'DELETE' });
+                if (!response.ok) return;
+
+                if (this.currentChatId === chatId) {
+                    this.newChat();
+                }
+                await Promise.all([this.loadStats(), this.loadChatHistory()]);
+            } catch (error) {
+                console.error('Failed to delete chat:', error);
             }
         },
 
