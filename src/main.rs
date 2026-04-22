@@ -38,16 +38,16 @@ async fn main() -> Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "hindsight=info".into()),
+                .unwrap_or_else(|_| "memore=info".into()),
         )
         .init();
 
     let config = Config::load()?;
 
-    println!("Connecting to database at {}...", config.database.url);
+    tracing::info!("Connecting to database at {}...", config.database.url);
     let storage = Arc::new(Storage::connect(&config.database.url).await?);
     storage.init_schema().await?;
-    println!("Database schema initialized.");
+    tracing::info!("Database schema initialized.");
 
     let llm = LLMClient::new(&config.llm);
     let embedding_dim = config.llm.embedding_dim;
@@ -76,10 +76,10 @@ async fn main() -> Result<()> {
 
     let web_server = WebServer::new(web_config, storage, cara);
 
-    println!("🌐 Starting web server at http://{}:{}...", web_host, web_port);
+    tracing::info!("🌐 Starting web server at http://{}:{}...", web_host, web_port);
 
     web_server.run().await?;
 
-    println!("Goodbye!");
+    tracing::info!("Goodbye!");
     Ok(())
 }
