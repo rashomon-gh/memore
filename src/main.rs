@@ -1,8 +1,8 @@
 //! Hindsight — agentic memory architecture for AI agents.
 //!
-//! This binary runs an interactive REPL that accepts user messages, stores
-//! extracted facts into a structured memory bank, recalls relevant context,
-//! and generates preference-conditioned responses.
+//! This binary runs a web server that provides an interactive dashboard and API
+//! for storing extracted facts into a structured memory bank, recalling relevant context,
+//! and generating preference-conditioned responses.
 //!
 //! See the module-level docs for each subsystem:
 //!
@@ -12,6 +12,7 @@
 //! - [`storage`] — PostgreSQL + pgvector persistence
 //! - [`tempr`] — Retain & Recall pipeline
 //! - [`cara`] — Reflect pipeline
+//! - [`api`] — Web server and REST API
 
 mod api;
 mod cara;
@@ -21,9 +22,7 @@ mod models;
 mod storage;
 mod tempr;
 
-use std::io::{self, Write};
 use std::sync::Arc;
-use std::env;
 
 use anyhow::Result;
 use cara::CaraPipeline;
@@ -33,7 +32,6 @@ use models::AgentProfile;
 use storage::Storage;
 use tempr::TemprPipeline;
 use api::WebServer;
-use tokio::io::AsyncBufReadExt;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -45,10 +43,6 @@ async fn main() -> Result<()> {
         .init();
 
     let config = Config::load()?;
-
-    let args: Vec<String> = env::args().collect();
-    let web_mode = args.len() > 1 && (args[1] == "--web" || args[1] == "--serve");
-    let cli_mode = !web_mode || (args.len() > 2 && args[2] == "--cli");
 
     println!("Connecting to database at {}...", config.database.url);
     let storage = Arc::new(Storage::connect(&config.database.url).await?);
@@ -72,78 +66,20 @@ async fn main() -> Result<()> {
 
     let cara = Arc::new(CaraPipeline::new(profile, tempr));
 
-    if web_mode || config.web.enabled {
-        let web_host = config.web.host.clone();
-        let web_port = config.web.port;
+    let web_host = config.web.host.clone();
+    let web_port = config.web.port;
 
-        let web_config = api::WebConfig {
-            host: web_host.clone(),
-            port: web_port,
-            enabled: true,
-        };
+    let web_config = api::WebConfig {
+        host: web_host.clone(),
+        port: web_port,
+    };
 
-        let web_server = WebServer::new(web_config, storage.clone(), cara.clone());
+    let web_server = WebServer::new(web_config, storage, cara);
 
-        if cli_mode {
-            println!("🌐 Starting web server at http://{}:{}...", web_host, web_port);
-            println!("Hindsight agent ready. Type a message (or 'quit' to exit):\n");
+    println!("🌐 Starting web server at http://{}:{}...", web_host, web_port);
 
-            tokio::select! {
-                result = web_server.run() => {
-                    result?;
-                }
-                result = run_cli_repl(cara) => {
-                    result?;
-                }
-            }
-        } else {
-            web_server.run().await?;
-        }
-    } else {
-        println!("Hindsight agent ready. Type a message (or 'quit' to exit):\n");
-        run_cli_repl(cara).await?;
-    }
+    web_server.run().await?;
 
     println!("Goodbye!");
-    Ok(())
-}
-
-async fn run_cli_repl(cara: Arc<CaraPipeline>) -> Result<()> {
-    let stdin = tokio::io::BufReader::new(tokio::io::stdin());
-    let mut lines = stdin.lines();
-
-    loop {
-        print!("> ");
-        io::stdout().flush()?;
-
-        let input: String = match lines.next_line().await? {
-            Some(line) => line,
-            None => break,
-        };
-
-        let input = input.trim();
-
-        if input.eq_ignore_ascii_case("quit") || input.eq_ignore_ascii_case("exit") {
-            break;
-        }
-
-        if input.is_empty() {
-            continue;
-        }
-
-        match cara.retain(input, None).await {
-            Ok(memories) => {
-                if !memories.is_empty() {
-                    tracing::info!("Retained {} new memories", memories.len());
-                }
-            }
-            Err(e) => tracing::error!("Retain error: {}", e),
-        }
-
-        match cara.reflect(input, 2000, None).await {
-            Ok((response, _opinions)) => println!("\n{}\n", response),
-            Err(e) => tracing::error!("Reflect error: {}", e),
-        }
-    }
     Ok(())
 }

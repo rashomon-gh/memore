@@ -11,6 +11,5 @@ llm:
   max_tokens: 16384
 
 web:
-  enabled: true
   host: "127.0.0.1"
   port: 8080

@@ -16,7 +16,6 @@
 //!   embed_model: "nomic-ai/nomic-embed-text-v1.5-GGUF"
 //!   embedding_dim: 768
 //! web:
-//!   enabled: true
 //!   host: "127.0.0.1"
 //!   port: 8080
 //! ```
@@ -69,9 +68,6 @@ pub struct LLMConfig {
 /// Web server configuration.
 #[derive(Debug, Clone, Deserialize)]
 pub struct WebConfig {
-    /// Whether to enable the web server.
-    #[serde(default)]
-    pub enabled: bool,
     /// Host to bind the web server to.
     #[serde(default = "default_host")]
     pub host: String,
@@ -83,7 +79,6 @@ pub struct WebConfig {
 impl Default for WebConfig {
     fn default() -> Self {
         Self {
-            enabled: false,
             host: default_host(),
             port: default_port(),
         }

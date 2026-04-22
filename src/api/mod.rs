@@ -24,7 +24,6 @@ use crate::api::routes::{ApiState, create_api_router};
 pub struct WebConfig {
     pub host: String,
     pub port: u16,
-    pub enabled: bool,
 }
 
 impl Default for WebConfig {
@@ -32,7 +31,6 @@ impl Default for WebConfig {
         Self {
             host: "127.0.0.1".to_string(),
             port: 8080,
-            enabled: false,
         }
     }
 }
@@ -50,11 +48,6 @@ impl WebServer {
     }
 
     pub async fn run(&self) -> Result<()> {
-        if !self.config.enabled {
-            info!("Web server is disabled in configuration");
-            return Ok(());
-        }
-
         let state = ApiState {
             storage: self.storage.clone(),
             cara: self.cara.clone(),

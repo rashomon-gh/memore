@@ -23,8 +23,6 @@ An LLM agent implementation with self evolving memory, based on
 
 ## Run
 
-### CLI Mode (Default)
-
 1. Start PostgreSQL with pgvector
 
 ```bash
@@ -37,19 +35,10 @@ docker compose up -d
 cp config.yaml.example config.yaml
 ```
 
-3. Build and run
+3. Build and run the web server
 
 ```bash
 cargo run
-```
-
-### Web Dashboard Mode
-
-Start the web visualization dashboard:
-
-```bash
-# Enable web server in config.yaml
-cargo run -- --web
 ```
 
 Access the dashboard at `http://127.0.0.1:8080/`
@@ -109,7 +98,6 @@ llm:
   embedding_dim: 768
 
 web:
-  enabled: true
   host: "127.0.0.1"
   port: 8080
 ```
@@ -130,7 +118,6 @@ llm:
   max_tokens: 16384
 
 web:
-  enabled: true
   host: "127.0.0.1"
   port: 8080
 ```
