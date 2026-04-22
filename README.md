@@ -2,10 +2,9 @@
 
 [![Build](https://github.com/rashomon-gh/hindsight/actions/workflows/build.yml/badge.svg)](https://github.com/rashomon-gh/hindsight/actions/workflows/build.yml/badge.svg)
 
-An unofficial implementation of
-[Hindsight is 20/20: Agent Memory that Retains, Recalls, and Reflects](http://arxiv.org/abs/2512.12818)
-in Rust.
-This project implements the agentic memory management architecture proposed in the paper.
+
+An LLM agent implementation with self evolving memory, based on 
+[Hindsight is 20/20: Agent Memory that Retains, Recalls, and Reflects](http://arxiv.org/abs/2512.12818).
 
 ## Features
 
@@ -51,9 +50,6 @@ Start the web visualization dashboard:
 ```bash
 # Enable web server in config.yaml
 cargo run -- --web
-
-# Or run both CLI and web server
-cargo run -- --web --cli
 ```
 
 Access the dashboard at `http://127.0.0.1:8080/`
@@ -118,11 +114,33 @@ web:
   port: 8080
 ```
 
+### Example Configuration - LM Studio
+
+```yaml
+database:
+  url: "postgres://hindsight:hindsight@localhost:5432/hindsight"
+
+llm:
+  base_url: "http://127.0.0.1:1234"
+  embed_base_url: "http://localhost:1234"
+  api_key: "Bearer token"
+  chat_model: "google/gemma-4-26b-a4b"
+  embed_model: "nomic-ai/nomic-embed-text-v1.5-GGUF"
+  embedding_dim: 768
+  max_tokens: 16384
+
+web:
+  enabled: true
+  host: "127.0.0.1"
+  port: 8080
+```
+
 ## Architecture
 
 ### TEMPR Pipeline (Temporal-Entity Memory Processing & Retrieval)
 
 **Retain Operation:**
+
 - LLM parses conversation to extract structured facts
 - Classification into one of four networks
 - Entity extraction and embedding generation
@@ -131,6 +149,7 @@ web:
 - Opinion reinforcement for related entities
 
 **Recall Operation:**
+
 - Parallel execution of 4 retrieval strategies
 - Spreading activation graph traversal (3 hops)
 - Reciprocal Rank Fusion (RRF) for result merging
@@ -146,6 +165,7 @@ web:
 ### Knowledge Graph
 
 Memory units are connected by four types of relationships:
+
 - **Temporal**: Sequential/time-based relationships
 - **Semantic**: Meaning-based similarity relationships
 - **Entity**: Shared-entity reference relationships
