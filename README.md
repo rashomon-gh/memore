@@ -29,11 +29,7 @@ An LLM agent implementation with self evolving memory, based on
 docker compose up -d
 ```
 
-2. Copy and edit the config (defaults should work for local development)
-
-```bash
-cp config.yaml.example config.yaml
-```
+2. Create a `config.yaml` file using the `config.yaml.example` file as a reference. (See below for an working example)
 
 3. Build and run the web server
 
