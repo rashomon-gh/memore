@@ -34,8 +34,10 @@ docker compose up -d
 3. Build and run the web server
 
 ```bash
-cargo run
+cargo run -- path/to/config.yaml
 ```
+
+If no path is provided, it defaults to `config.yaml` in the current directory.
 
 Access the dashboard at `http://127.0.0.1:8080/`
 
@@ -77,7 +79,7 @@ curl http://localhost:8080/api/stats
 
 ## Configuration
 
-Configuration is loaded from `config.yaml` in the project root. See `config.yaml.example` for all options.
+Configuration is loaded from the file path provided as a CLI argument, or defaults to `config.yaml` in the project root if no argument is given. See `config.yaml.example` for all options.
 
 Key configuration options:
 
