@@ -11,6 +11,8 @@ You are an expert Rust developer tasked with implementing the "Memor/e" agentic 
 
 * **Data Storage:** Implement a storage layer capable of handling vector embeddings, full-text search, and relational/graph data (Recommendation: PostgreSQL with pgvector for semantic search and a GIN index for BM25 ranking ).
 
+* **Configuration:** Support loading configuration via a custom file path passed as a CLI argument, defaulting to `config.yaml` if not provided.
+
 * **Documentation:** You must generate and maintain a README.md file. This file must be strictly concise, providing only the gist of the project and instructions on how to run it. **Do not** include lengthy descriptions, underlying theory, or directory structures.
 
 ## ---
