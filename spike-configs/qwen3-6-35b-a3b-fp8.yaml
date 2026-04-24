@@ -1,0 +1,15 @@
+database:
+  url: "postgres://hindsight:hindsight@localhost:5432/hindsight"
+
+llm:
+  base_url: "http://qwen3-6-35b-a3b-fp8-runai-gellms.inference.spike.tue.nl"
+  embed_base_url: "http://localhost:1234"
+  api_key: "Bearer token"
+  chat_model: "qwen/qwen3-6-35b-a3b-fp8"
+  embed_model: "nomic-ai/nomic-embed-text-v1.5-GGUF"
+  embedding_dim: 768
+  max_tokens: 16384
+
+web:
+  host: "127.0.0.1"
+  port: 8080
