@@ -85,7 +85,9 @@ impl LLMClient {
             "Creating LLM client"
         );
         let client = Client::builder()
-            .timeout(Duration::from_secs(180))
+            .timeout(Duration::from_secs(600))
+            .connect_timeout(Duration::from_secs(60))
+            .tcp_keepalive(Duration::from_secs(30))
             .build()
             .expect("failed to build HTTP client");
 
