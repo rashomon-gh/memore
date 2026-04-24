@@ -41,6 +41,10 @@ If no path is provided, it defaults to `config.yaml` in the current directory.
 
 Access the dashboard at `http://127.0.0.1:8080/`
 
+> [!NOTE]
+> The `spike-configs` are only accessible from TU/e network.
+> You can create your own config with your own API url and then run the application. Check [`config.yaml.example`](config.yaml.example) for an example.
+
 ## Web Dashboard
 
 The interactive web dashboard provides:
